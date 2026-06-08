@@ -29,8 +29,17 @@ export class BookingsService {
         });
     }
 
-    async findAll() {
+    async findAll(user: { userId: number; role: string }) {
+        // RBAC: Regular USERs can only see their own bookings. ADMINs see everything.
+        if (user.role === 'ADMIN') {
+            return this.prisma.booking.findMany({
+                include: { car: true, user: true },
+            });
+        }
         return this.prisma.booking.findMany({
+            where: {
+                userId: user.userId, // 👈 Filter by the authenticated user's ID
+            },
             include: { car: true, user: true },
         });
     }
