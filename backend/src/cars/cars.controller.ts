@@ -3,11 +3,19 @@ import { CarsService } from './cars.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
 
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { Role } from '@prisma/client';
+
 @Controller('cars')
 export class CarsController {
   constructor(private readonly carsService: CarsService) { }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN) // Tag it is Admin-only
   create(@Body() createCarDto: CreateCarDto) {
     return this.carsService.create(createCarDto);
   }
@@ -23,11 +31,15 @@ export class CarsController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   update(@Param('id') id: string, @Body() updateCarDto: UpdateCarDto) {
     return this.carsService.update(+id, updateCarDto);
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   remove(@Param('id') id: string) {
     return this.carsService.remove(+id);
   }
