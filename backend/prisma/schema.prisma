@@ -13,15 +13,20 @@ datasource db {
 }
 
 model User {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
-  name      String?
-  password  String
-  refreshToken  String?
-  role      Role      @default(USER)
-  bookings  Booking[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id               Int       @id @default(autoincrement())
+  email            String    @unique
+  name             String?
+  password         String
+  refreshToken     String?
+  role             Role      @default(USER)
+  bookings         Booking[]
+  
+  // 👈 Add these two lines to connect User to Message model
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Car {
@@ -51,6 +56,19 @@ model Booking {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// 👈 Add the Message model here
+model Message {
+  id         Int      @id @default(autoincrement())
+  content    String
+  createdAt  DateTime @default(now())
+
+  senderId   Int
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+
+  receiverId Int
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
 }
 
 enum Role {
