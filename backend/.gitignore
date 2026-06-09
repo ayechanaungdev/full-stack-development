@@ -14,6 +14,12 @@ lerna-debug.log*
 .DS_Store
 Thumbs.db
 
+# auto generated test coverage
+coverage
+
+# Firebase Service Account
+serviceAccountKey.json
+
 # IDEs and editors
 .idea/
 .vscode/
