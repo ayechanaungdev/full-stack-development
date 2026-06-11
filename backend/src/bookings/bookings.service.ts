@@ -57,4 +57,41 @@ export class BookingsService {
             include: { car: true, user: true },
         });
     }
+
+    // bookings.service.ts ထဲတွင် ထည့်သွင်းရန် method
+    async updateStatus(id: number, status: string) {
+        // Database တွင် Status အား Update လုပ်ပါမည်
+        const updatedBooking = await this.prisma.booking.update({
+            where: { id },
+            data: { status: status as any }, // Enum type သို့ cast လုပ်ခြင်း
+            include: { user: true, car: true },
+        });
+
+        // User တွင် FCM Token ရှိပါက Notification ချက်ချင်း ပို့ပါမည်
+        if (updatedBooking.user && updatedBooking.user.fcmToken) {
+            const title = `Booking Status Updated! 🔔`;
+            const body = `Your booking for ${updatedBooking.car.brand} ${updatedBooking.car.model} has been updated to ${status}.`;
+
+            // Push Notification ပို့ပါမည်
+            this.firebaseService.sendPushNotification(
+                updatedBooking.user.fcmToken,
+                title,
+                body,
+            );
+
+            // Database Notification Table ထဲတွင် မှတ်တမ်းတင်ပါမည်
+            await this.prisma.notification.create({
+                data: {
+                    title,
+                    body,
+                    type: `STATUS_CHANGED_${status}`, // ဥပမာ - STATUS_CHANGED_APPROVED
+                    userId: updatedBooking.userId,
+                    bookingId: updatedBooking.id,
+                },
+            });
+        }
+
+        return updatedBooking;
+    }
+
 }

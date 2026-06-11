@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Request, Patch, Param } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -29,4 +29,13 @@ export class BookingsController {
         // Pass the authenticated user info to the service for role-based filtering
         return this.bookingsService.findAll(req.user);
     }
+
+    @Patch(':id/status')
+    updateStatus(
+        @Param('id') id: string,
+        @Body('status') status: string,
+    ) {
+        return this.bookingsService.updateStatus(+id, status);
+    }
+
 }

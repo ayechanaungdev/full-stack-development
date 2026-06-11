@@ -65,7 +65,7 @@ export class CronService {
                     lte: tomorrowEnd,
                 },
                 status: {
-                    in: ['PENDING', 'APPROVED'], // 👈 PENDING နှင့် APPROVED နှစ်မျိုးလုံးကို ရှာမည်
+                    in: ['PENDING', 'APPROVED'],
                 },
             },
             include: {
@@ -74,8 +74,21 @@ export class CronService {
         });
 
         for (const booking of upcomingBookings) {
+            // 👈 (က) ယခင်က ဤ Booking ID အတွက် သတိပေးချက် ပို့ပြီးပြီလား အရင်စစ်ဆေးပါမည်
+            const alreadySent = await this.prisma.notification.findFirst({
+                where: {
+                    bookingId: booking.id,
+                    type: `UPCOMING_REMINDER_${booking.status}`, // 👈 ဥပမာ - UPCOMING_REMINDER_PENDING သို့မဟုတ် UPCOMING_REMINDER_APPROVED
+                },
+            });
+
+            // 👈 (ခ) ပို့ပြီးသားမှတ်တမ်းရှိပါက ကျော်သွားပါမည်
+            if (alreadySent) {
+                this.logger.debug(`Booking ID ${booking.id} အတွက် သတိပေးချက် ပို့ပြီးသားဖြစ်၍ ကျော်သွားပါမည်။ ⏭️`);
+                continue;
+            }
+
             if (booking.user && booking.user.fcmToken) {
-                // 👈 Status အပေါ် မူတည်ပြီး Message ကို ကွဲပြားအောင် သတ်မှတ်ခြင်း
                 const title = booking.status === 'APPROVED'
                     ? 'ကားငှားရမ်းမှု သတိပေးချက် 🚗'
                     : 'ခရီးစဉ်အတည်ပြုရန် သတိပေးချက် ⚠️';
@@ -90,7 +103,18 @@ export class CronService {
                     body,
                 );
 
-                this.logger.log(`🔔 Booking ID ${booking.id} (${booking.status}) အတွက် User ID ${booking.user.id} ဆီသို့ Notification ပို့ပြီးပါပြီ။`);
+                // 👈 (ဂ) Notification အောင်မြင်စွာပို့ပြီးပါက Database တွင် သွားရောက်မှတ်တမ်းတင်ပါမည်
+                await this.prisma.notification.create({
+                    data: {
+                        title,
+                        body,
+                        type: `UPCOMING_REMINDER_${booking.status}`, // 👈 ဥပမာ - UPCOMING_REMINDER_PENDING သို့မဟုတ် UPCOMING_REMINDER_APPROVED
+                        userId: booking.userId,
+                        bookingId: booking.id,
+                    },
+                });
+
+                this.logger.log(`🔔 Booking ID ${booking.id} (${booking.status}) အတွက် User ID ${booking.user.id} ဆီသို့ Notification ပို့ပြီး မှတ်တမ်းတင်ပါမည်။`);
             } else {
                 this.logger.warn(`⚠️ Booking ID ${booking.id} ၏ User တွင် FCM Token မရှိသဖြင့် Notification မပို့နိုင်ပါ။`);
             }
