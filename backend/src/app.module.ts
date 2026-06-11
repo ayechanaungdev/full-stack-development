@@ -8,9 +8,21 @@ import { BookingsModule } from './bookings/bookings.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { ScheduleModule } from '@nestjs/schedule';
+import { CronModule } from './cron/cron.module';
 
 @Module({
-    imports: [PrismaModule, CarsModule, UsersModule, BookingsModule, AuthModule, ChatModule, FirebaseModule], // We will add other modules here later
+    imports: [
+        PrismaModule, 
+        CarsModule, 
+        UsersModule, 
+        BookingsModule, 
+        AuthModule, 
+        ChatModule, 
+        FirebaseModule,
+        ScheduleModule.forRoot(),
+        CronModule // 👈 Schedule စနစ်ကို ဖွင့်လိုက်ပါပြီ
+    ],
     controllers: [AppController], // Routes go here
     providers: [AppService], // Business logic goes here
 })
