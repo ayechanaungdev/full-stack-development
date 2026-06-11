@@ -47,7 +47,7 @@ model Booking {
   startDate DateTime
   endDate   DateTime
   totalPrice Float
-  status    String   @default("PENDING") // PENDING, CONFIRMED, CANCELLED
+  status    BookingStatus   @default(PENDING) 
   
   userId    Int
   user      User     @relation(fields: [userId], references: [id])
@@ -76,3 +76,12 @@ enum Role {
   USER
   ADMIN
 }
+
+enum BookingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
