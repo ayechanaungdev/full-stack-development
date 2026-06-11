@@ -25,6 +25,7 @@ model User {
   // 👈 Add these two lines to connect User to Message model
   sentMessages     Message[] @relation("SentMessages")
   receivedMessages Message[] @relation("ReceivedMessages")
+  notifications    Notification[]
   
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -54,6 +55,7 @@ model Booking {
   
   carId     Int
   car       Car      @relation(fields: [carId], references: [id])
+  notifications    Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -71,6 +73,23 @@ model Message {
   receiverId Int
   receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
 }
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  title       String
+  body        String
+  type        String   // ဥပမာ - "UPCOMING_REMINDER", "BOOKING_CONFIRMED"
+  isRead      Boolean  @default(false)
+  
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  
+  bookingId   Int?     
+  booking     Booking? @relation(fields: [bookingId], references: [id])
+  
+  createdAt   DateTime @default(now())
+}
+
 
 enum Role {
   USER
