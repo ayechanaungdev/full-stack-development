@@ -15,7 +15,8 @@ export class CronService {
     ) { }
 
     // 👈 EVERY_MINUTE ဆိုတဲ့အတိုင်း စက္ကန့် ၆၀ ပြည့်တိုင်း ဒီ function က သူ့အလိုလို အလုပ်လုပ်ပါမယ်
-    @Cron(CronExpression.EVERY_MINUTE)
+    // @Cron(CronExpression.EVERY_MINUTE)
+    @Cron(CronExpression.EVERY_DAY_AT_8AM)
     async handleAutoCompleteBookings() {
         this.logger.debug('Checking for expired bookings... 🔍');
 
