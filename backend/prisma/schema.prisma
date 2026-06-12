@@ -13,15 +13,22 @@ datasource db {
 }
 
 model User {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
-  name      String?
-  password  String
-  refreshToken  String?
-  role      Role      @default(USER)
-  bookings  Booking[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id               Int       @id @default(autoincrement())
+  email            String    @unique
+  name             String?
+  password         String
+  refreshToken     String?
+  fcmToken         String?   // 👈 Mobile Device Token for Push Notifications
+  role             Role      @default(USER)
+  bookings         Booking[]
+  
+  // 👈 Add these two lines to connect User to Message model
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+  notifications    Notification[]
+  
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Car {
@@ -41,19 +48,59 @@ model Booking {
   startDate DateTime
   endDate   DateTime
   totalPrice Float
-  status    String   @default("PENDING") // PENDING, CONFIRMED, CANCELLED
+  status    BookingStatus   @default(PENDING) 
   
   userId    Int
   user      User     @relation(fields: [userId], references: [id])
   
   carId     Int
   car       Car      @relation(fields: [carId], references: [id])
+  notifications    Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+// 👈 Add the Message model here
+model Message {
+  id         Int      @id @default(autoincrement())
+  content    String
+  createdAt  DateTime @default(now())
+
+  senderId   Int
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+
+  receiverId Int
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  title       String
+  body        String
+  type        String   // ဥပမာ - "UPCOMING_REMINDER", "BOOKING_CONFIRMED"
+  isRead      Boolean  @default(false)
+  
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  
+  bookingId   Int?     
+  booking     Booking? @relation(fields: [bookingId], references: [id])
+  
+  createdAt   DateTime @default(now())
+}
+
+
 enum Role {
   USER
   ADMIN
 }
+
+enum BookingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
