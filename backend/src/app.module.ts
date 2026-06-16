@@ -8,22 +8,24 @@ import { BookingsModule } from './bookings/bookings.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { InquiriesModule } from './inquiries/inquiries.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronModule } from './cron/cron.module';
 
 @Module({
-    imports: [
-        PrismaModule, 
-        CarsModule, 
-        UsersModule, 
-        BookingsModule, 
-        AuthModule, 
-        ChatModule, 
-        FirebaseModule,
-        ScheduleModule.forRoot(),
-        CronModule // 👈 Schedule စနစ်ကို ဖွင့်လိုက်ပါပြီ
-    ],
-    controllers: [AppController], // Routes go here
-    providers: [AppService], // Business logic goes here
+  imports: [
+    PrismaModule,
+    CarsModule,
+    UsersModule,
+    BookingsModule,
+    AuthModule,
+    ChatModule,
+    FirebaseModule,
+    InquiriesModule,
+    ScheduleModule.forRoot(),
+    CronModule, // 👈 Schedule စနစ်ကို ဖွင့်လိုက်ပါပြီ
+  ],
+  controllers: [AppController], // Routes go here
+  providers: [AppService], // Business logic goes here
 })
-export class AppModule { }
+export class AppModule {}

@@ -16,11 +16,22 @@ model User {
   id               Int       @id @default(autoincrement())
   email            String    @unique
   name             String?
+  full_name        String?
+  phone            String?
+  avatar_url       String?
+  nrc              String?
+  nrc_url          String?
+  gender           String?
+  postal_code      String?
+  location         String?
+  is_active        Boolean   @default(true)
+  is_blacklist     Boolean   @default(false)
   password         String
   refreshToken     String?
   fcmToken         String?   // 👈 Mobile Device Token for Push Notifications
   role             Role      @default(USER)
   bookings         Booking[]
+  inquiries        Inquiry[]
   
   // 👈 Add these two lines to connect User to Message model
   sentMessages     Message[] @relation("SentMessages")
@@ -57,6 +68,8 @@ model Booking {
   car       Car      @relation(fields: [carId], references: [id])
   notifications    Notification[]
 
+  inquiries  Inquiry[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -88,6 +101,18 @@ model Notification {
   booking     Booking? @relation(fields: [bookingId], references: [id])
   
   createdAt   DateTime @default(now())
+}
+
+model Inquiry {
+  id              Int      @id @default(autoincrement())
+  submittedUserId Int
+  submittedUser   User     @relation(fields: [submittedUserId], references: [id])
+  type            String
+  content         String
+  status          String   @default("opened")
+  bookingId       Int?
+  booking         Booking? @relation(fields: [bookingId], references: [id])
+  createdAt       DateTime @default(now())
 }
 
 
