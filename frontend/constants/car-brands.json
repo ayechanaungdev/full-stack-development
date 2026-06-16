@@ -1,0 +1,245 @@
+[
+  {
+    "brand": "Audi",
+    "models": [
+      "A3",
+      "A4",
+      "A6",
+      "A8",
+      "e-tron",
+      "Q3",
+      "Q5",
+      "Q7",
+      "RS3",
+      "TT",
+      "Other"
+    ]
+  },
+  {
+    "brand": "BMW",
+    "models": [
+      "3 Series",
+      "5 Series",
+      "7 Series",
+      "i4",
+      "M3",
+      "M5",
+      "X1",
+      "X3",
+      "X5",
+      "X7",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Chevrolet",
+    "models": [
+      "Camaro",
+      "Colorado",
+      "Cruze",
+      "Equinox",
+      "Malibu",
+      "Spark",
+      "Suburban",
+      "Tahoe",
+      "Trailblazer",
+      "Trax",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Ford",
+    "models": [
+      "Bronco",
+      "EcoSport",
+      "Escape",
+      "Everest",
+      "Explorer",
+      "Focus",
+      "Mustang",
+      "Ranger",
+      "Territory",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Honda",
+    "models": [
+      "Accord",
+      "BR-V",
+      "City",
+      "Civic",
+      "CR-V",
+      "Fit",
+      "Freed",
+      "HR-V",
+      "Jazz",
+      "Pilot",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Hyundai",
+    "models": [
+      "Accent",
+      "Creta",
+      "Elantra",
+      "i10",
+      "i20",
+      "Ioniq",
+      "Kona",
+      "Santa Fe",
+      "Sonata",
+      "Tucson",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Kia",
+    "models": [
+      "Carnival",
+      "Cerato",
+      "EV6",
+      "Niro",
+      "Picanto",
+      "Rio",
+      "Seltos",
+      "Sorento",
+      "Sportage",
+      "Stonic",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Lexus",
+    "models": [
+      "ES",
+      "GX",
+      "IS",
+      "LC",
+      "LS",
+      "LX",
+      "NX",
+      "RC",
+      "RX",
+      "UX",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Mazda",
+    "models": [
+      "BT-50",
+      "CX-3",
+      "CX-30",
+      "CX-5",
+      "CX-60",
+      "CX-8",
+      "Mazda2",
+      "Mazda3",
+      "Mazda6",
+      "MX-5",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Mercedes-Benz",
+    "models": [
+      "A-Class",
+      "C-Class",
+      "CLA",
+      "E-Class",
+      "EQS",
+      "GLA",
+      "GLC",
+      "GLE",
+      "Maybach S-Class",
+      "S-Class",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Mitsubishi",
+    "models": [
+      "ASX",
+      "Attrage",
+      "Eclipse Cross",
+      "Galant",
+      "L200",
+      "Mirage",
+      "Outlander",
+      "Pajero",
+      "Triton",
+      "Xpander",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Nissan",
+    "models": [
+      "Almera",
+      "Kicks",
+      "Navara",
+      "Patrol",
+      "Qashqai",
+      "Serena",
+      "Sunny",
+      "Sylphy",
+      "Teana",
+      "X-Trail",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Suzuki",
+    "models": [
+      "Alto",
+      "Baleno",
+      "Celerio",
+      "Ciaz",
+      "Ertiga",
+      "Ignis",
+      "Jimny",
+      "S-Cross",
+      "Swift",
+      "Vitara",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Toyota",
+    "models": [
+      "Avanza",
+      "Camry",
+      "Corolla",
+      "Fortuner",
+      "Hilux",
+      "Land Cruiser",
+      "Prius",
+      "RAV4",
+      "Vios",
+      "Yaris",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Volkswagen",
+    "models": [
+      "Arteon",
+      "Caddy",
+      "Golf",
+      "ID.4",
+      "Jetta",
+      "Passat",
+      "Polo",
+      "T-Roc",
+      "Tiguan",
+      "Touareg",
+      "Other"
+    ]
+  },
+  {
+    "brand": "Other",
+    "models": []
+  }
+]

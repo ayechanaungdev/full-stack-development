@@ -1,0 +1,61 @@
+[
+  { "name": "Ahlone", "postalCode": "11121" },
+  { "name": "Bahan", "postalCode": "11201" },
+  { "name": "Botahtaung", "postalCode": "11161" },
+  { "name": "Dagon", "postalCode": "11191" },
+
+  { "name": "Dagon Myothit East", "postalCode": "11451" },
+  { "name": "Dagon Myothit North", "postalCode": "11421" },
+  { "name": "Dagon Myothit South", "postalCode": "11431" },
+  { "name": "Dagon Myothit Seikkan", "postalCode": "11441" },
+
+  { "name": "Dala", "postalCode": "11261" },
+  { "name": "Dawbon", "postalCode": "11241" },
+
+  { "name": "Hlaing", "postalCode": "11051" },
+  { "name": "Hlaing Tharyar", "postalCode": "11401" },
+  { "name": "Hlegu", "postalCode": "11371" },
+  { "name": "Hmawbi", "postalCode": "11361" },
+  { "name": "Htantabin", "postalCode": "11391" },
+
+  { "name": "Insein", "postalCode": "11011" },
+  { "name": "Kamayut", "postalCode": "11041" },
+  { "name": "Kawhmu", "postalCode": "11351" },
+  { "name": "Khayan", "postalCode": "11321" },
+  { "name": "Cocokyun", "postalCode": "11281" },
+
+  { "name": "Kungyangon", "postalCode": "11341" },
+  { "name": "Kyauktada", "postalCode": "11182" },
+  { "name": "Kyauktan", "postalCode": "11301" },
+  { "name": "Kyeemyindaing", "postalCode": "11101" },
+
+  { "name": "Lanmadaw", "postalCode": "11131" },
+  { "name": "Latha", "postalCode": "11141" },
+  { "name": "Mayangon", "postalCode": "11061" },
+
+  { "name": "Mingaladon", "postalCode": "11021" },
+  { "name": "Mingala Taungnyunt", "postalCode": "11221" },
+
+  { "name": "North Okkalapa", "postalCode": "11031" },
+  { "name": "South Okkalapa", "postalCode": "11091" },
+
+  { "name": "Pabedan", "postalCode": "11151" },
+  { "name": "Pazundaung", "postalCode": "11171" },
+
+  { "name": "Sanchaung", "postalCode": "11111" },
+  { "name": "Seikkan", "postalCode": "11181" },
+  { "name": "Seikkyi Kanaungto", "postalCode": "11271" },
+
+  { "name": "Shwepyithar", "postalCode": "11411" },
+
+  { "name": "Taikkyi", "postalCode": "11381" },
+  { "name": "Tamwe", "postalCode": "11211" },
+  { "name": "Thaketa", "postalCode": "11231" },
+
+  { "name": "Thanlyin", "postalCode": "11291" },
+  { "name": "Thongwa", "postalCode": "11311" },
+  { "name": "Twante", "postalCode": "11331" },
+
+  { "name": "Thingangyun", "postalCode": "11071" },
+  { "name": "Yankin", "postalCode": "11081" }
+]
