@@ -104,6 +104,36 @@ export const inquiryService = {
     api.post<{ id: number }>("inquiries", payload, token),
 };
 
+export const storageService = {
+  // Server-side base64 upload
+  uploadBase64: (
+    filename: string,
+    contentBase64: string,
+    contentType?: string,
+    token?: string,
+    bucket?: string,
+  ) =>
+    api.post<{ publicUrl: string }>(
+      "uploads",
+      { filename, contentBase64, contentType, bucket },
+      token,
+    ),
+
+  // Request a signed upload URL (client will PUT the file to the returned URL)
+  getSignedUrl: (
+    filename: string,
+    contentType?: string,
+    expiresInSeconds?: number,
+    token?: string,
+    bucket?: string,
+  ) =>
+    api.post<{ uploadUrl: string; publicUrl: string }>(
+      "uploads/signed-url",
+      { filename, contentType, expiresInSeconds, bucket },
+      token,
+    ),
+};
+
 export type BackendError = ApiError;
 
 export default {
@@ -112,4 +142,5 @@ export default {
   bookingService,
   carService,
   inquiryService,
+  storageService,
 };

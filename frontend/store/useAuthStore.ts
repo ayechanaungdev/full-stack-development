@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
+import adapters from "@/lib/serviceAdapters";
 import { RealtimeChannel, Session, User } from "@supabase/supabase-js";
-import { decode } from "base-64";
+import { decode, encode as b64encode } from "base-64";
 import { AppState, AppStateStatus } from "react-native";
 import { create } from "zustand";
 
@@ -250,7 +251,7 @@ export const useAuthStore = create<AuthState>((set, get) => {
       }
     },
 
-    // Uploads avatar image to Supabase Storage and returns the public URL.
+    // Uploads avatar image using backend storage adapter and returns the public URL.
     uploadAvatar: async (
       uri: string,
       userId: string,
@@ -259,33 +260,81 @@ export const useAuthStore = create<AuthState>((set, get) => {
       try {
         const fileExt = uri.split(".").pop()?.split("?")[0] || "jpg";
         const fileName = `${userId}.${fileExt}`;
-        let body: any;
         const finalBase64 = base64 || get().avatarBase64;
+        const contentType = `image/${fileExt === "jpg" ? "jpeg" : fileExt}`;
+        const token = get().session?.access_token as unknown as
+          | string
+          | undefined;
 
-        if (finalBase64) {
-          const binary = decode(finalBase64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++)
-            bytes[i] = binary.charCodeAt(i);
-          body = bytes;
-        } else {
-          const response = await fetch(uri);
-          body = await response.blob();
+        // Try signed URL flow first (server returns uploadUrl + publicUrl).
+        try {
+          const signed = await adapters.storageService.getSignedUrl(
+            fileName,
+            contentType,
+            60 * 5,
+            token,
+          );
+
+          const { uploadUrl, publicUrl } = signed;
+          // Upload the file directly to the signed URL
+          if (finalBase64) {
+            // finalBase64 may include data: prefix — strip it
+            const comma = finalBase64.indexOf(",");
+            const raw = comma >= 0 ? finalBase64.slice(comma + 1) : finalBase64;
+            const binary = decode(raw);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++)
+              bytes[i] = binary.charCodeAt(i);
+            await fetch(uploadUrl, {
+              method: "PUT",
+              body: bytes,
+              headers: { "Content-Type": contentType },
+            } as any);
+          } else {
+            const response = await fetch(uri);
+            const blob = await response.blob();
+            await fetch(uploadUrl, {
+              method: "PUT",
+              body: blob,
+              headers: { "Content-Type": contentType },
+            } as any);
+          }
+
+          return publicUrl;
+        } catch (err) {
+          // Signed URL failed — fallback to base64 server upload
+          if (finalBase64) {
+            const res = await adapters.storageService.uploadBase64(
+              fileName,
+              finalBase64,
+              contentType,
+              token,
+            );
+            return res?.publicUrl || null;
+          }
+
+          // Fetch uri and convert to base64 then upload
+          try {
+            const resp = await fetch(uri);
+            const blob = await resp.blob();
+            // Read blob as base64
+            const arrayBuffer = await blob.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = "";
+            for (let i = 0; i < bytes.length; i++)
+              binary += String.fromCharCode(bytes[i]);
+            const b64 = `data:${contentType};base64,${b64encode(binary)}`;
+            const res = await adapters.storageService.uploadBase64(
+              fileName,
+              b64,
+              contentType,
+              token,
+            );
+            return res?.publicUrl || null;
+          } catch {
+            return null;
+          }
         }
-
-        const { error: uploadError } = await supabase.storage
-          .from("profiles")
-          .upload(fileName, body, {
-            contentType: `image/${fileExt === "jpg" ? "jpeg" : fileExt}`,
-            upsert: true,
-          });
-
-        if (uploadError) throw uploadError;
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from("profiles").getPublicUrl(fileName);
-        return publicUrl;
       } catch {
         return null;
       }
@@ -386,7 +435,10 @@ AppState.addEventListener("change", async (nextState: AppStateStatus) => {
     const { data, error: sessionError } = await supabase.auth.getSession();
 
     if (sessionError) {
-      console.warn("Session recovery failed while reading storage:", sessionError);
+      console.warn(
+        "Session recovery failed while reading storage:",
+        sessionError,
+      );
       await store.signOut();
       return;
     }
@@ -404,9 +456,7 @@ AppState.addEventListener("change", async (nextState: AppStateStatus) => {
       const refreshToken = store.session?.refresh_token;
 
       if (!refreshToken) {
-        console.warn(
-          "No refresh token available on app resume; signing out.",
-        );
+        console.warn("No refresh token available on app resume; signing out.");
         await store.signOut();
         return;
       }
