@@ -83,4 +83,34 @@ export class FirebaseService {
       throw error;
     }
   }
+
+  // Generate a signed upload URL (PUT) for direct client uploads
+  async getSignedUploadUrl(
+    filePath: string,
+    expiresInSeconds = 60 * 5,
+    contentType?: string,
+    bucketName?: string,
+  ) {
+    try {
+      const bucket = bucketName
+        ? admin.storage().bucket(bucketName)
+        : admin.storage().bucket();
+      const file = bucket.file(filePath);
+
+      const [url] = await file.getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + expiresInSeconds * 1000,
+        contentType: contentType || 'application/octet-stream',
+      } as any);
+
+      // Also compute the public URL where file will be accessible after making public
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
+
+      return { uploadUrl: url, publicUrl };
+    } catch (error) {
+      this.logger.error('Error generating signed upload URL', error);
+      throw error;
+    }
+  }
 }

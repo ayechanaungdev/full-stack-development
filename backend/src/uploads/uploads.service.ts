@@ -23,4 +23,18 @@ export class UploadsService {
       bucket,
     );
   }
+
+  async getSignedUrl(
+    filename: string,
+    expiresInSeconds?: number,
+    contentType?: string,
+    bucket?: string,
+  ) {
+    return this.firebaseService.getSignedUploadUrl(
+      filename,
+      expiresInSeconds,
+      contentType,
+      bucket,
+    );
+  }
 }
