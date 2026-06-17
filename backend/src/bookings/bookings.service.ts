@@ -1,33 +1,34 @@
 import { Injectable, ConflictException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { BookingsRepository } from './bookings.repository';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { FirebaseService } from 'src/firebase/firebase.service';
 
+/**
+ * Bookings Service
+ * Business logic layer - uses Repository for data access
+ */
 @Injectable()
 export class BookingsService {
-    constructor(private prisma: PrismaService, private firebaseService: FirebaseService) { }
+    constructor(
+        private bookingsRepository: BookingsRepository,
+        private firebaseService: FirebaseService
+    ) { }
 
     async create(createBookingDto: CreateBookingDto) {
         const { carId, startDate, endDate } = createBookingDto;
         // 1. Check if the car is already booked during these dates
-        const existingBooking = await this.prisma.booking.findFirst({
-            where: {
-                carId: carId,
-                // Overlap logic: (StartA <= EndB) AND (EndA >= StartB)
-                AND: [
-                    { startDate: { lte: new Date(endDate) } },
-                    { endDate: { gte: new Date(startDate) } },
-                ],
-            },
-        });
+        const existingBooking = await this.bookingsRepository.findOverlappingBooking(
+            carId,
+            new Date(startDate),
+            new Date(endDate)
+        );
+
         if (existingBooking) {
             throw new ConflictException('This car is already booked for the selected dates! 🚫');
         }
         // 2. Create the booking (return အစား variable ထဲ အရင်ထည့်ပါမယ်)
-        const newBooking = await this.prisma.booking.create({
-            data: createBookingDto,
-            include: { car: true, user: true },
-        });
+        const newBooking = await this.bookingsRepository.createWithRelations(createBookingDto);
+
         // 👈 3. User မှာ fcmToken ရှိရင် Notification လှမ်းပို့ပါမယ်
         if (newBooking.user && newBooking.user.fcmToken) {
             const title = 'Booking Confirmed! 🎉';
@@ -46,26 +47,15 @@ export class BookingsService {
     async findAll(user: { userId: number; role: string }) {
         // RBAC: Regular USERs can only see their own bookings. ADMINs see everything.
         if (user.role === 'ADMIN') {
-            return this.prisma.booking.findMany({
-                include: { car: true, user: true },
-            });
+            return this.bookingsRepository.findAll();
         }
-        return this.prisma.booking.findMany({
-            where: {
-                userId: user.userId, // 👈 Filter by the authenticated user's ID
-            },
-            include: { car: true, user: true },
-        });
+        return this.bookingsRepository.findByUserId(user.userId);
     }
 
     // bookings.service.ts ထဲတွင် ထည့်သွင်းရန် method
     async updateStatus(id: number, status: string) {
         // Database တွင် Status အား Update လုပ်ပါမည်
-        const updatedBooking = await this.prisma.booking.update({
-            where: { id },
-            data: { status: status as any }, // Enum type သို့ cast လုပ်ခြင်း
-            include: { user: true, car: true },
-        });
+        const updatedBooking = await this.bookingsRepository.updateStatus(id, status);
 
         // User တွင် FCM Token ရှိပါက Notification ချက်ချင်း ပို့ပါမည်
         if (updatedBooking.user && updatedBooking.user.fcmToken) {
@@ -80,7 +70,8 @@ export class BookingsService {
             );
 
             // Database Notification Table ထဲတွင် မှတ်တမ်းတင်ပါမည်
-            await this.prisma.notification.create({
+            // Note: This still uses prisma directly for notification creation - could be refactored later
+            await this.bookingsRepository['prisma'].notification.create({
                 data: {
                     title,
                     body,
@@ -94,4 +85,20 @@ export class BookingsService {
         return updatedBooking;
     }
 
+    // Additional business logic methods using repository
+    async findByCarId(carId: number) {
+        return this.bookingsRepository.findByCarId(carId);
+    }
+
+    async findByStatus(status: string) {
+        return this.bookingsRepository.findByStatus(status);
+    }
+
+    async findPendingBookings() {
+        return this.bookingsRepository.findPendingBookings();
+    }
+
+    async findActiveBookings() {
+        return this.bookingsRepository.findActiveBookings();
+    }
 }

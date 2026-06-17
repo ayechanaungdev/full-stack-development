@@ -9,7 +9,10 @@ export class FirebaseService {
   constructor() {
     try {
       // serviceAccountKey.json ဖိုင်တည်ရှိရာလမ်းကြောင်းကို ယူပါမယ်
-      const serviceAccountPath = path.resolve(process.cwd(), 'serviceAccountKey.json');
+      const serviceAccountPath = path.resolve(
+        process.cwd(),
+        'serviceAccountKey.json',
+      );
       const serviceAccount = require(serviceAccountPath);
 
       // Firebase App ကို Initialize မလုပ်ရသေးရင် လုပ်ပါမယ်
@@ -25,7 +28,12 @@ export class FirebaseService {
   }
 
   // Notification ပို့မယ့် Method
-  async sendPushNotification(token: string, title: string, body: string, data?: any) {
+  async sendPushNotification(
+    token: string,
+    title: string,
+    body: string,
+    data?: any,
+  ) {
     try {
       const message: admin.messaging.Message = {
         notification: {
@@ -42,6 +50,67 @@ export class FirebaseService {
     } catch (error) {
       this.logger.error('Error sending push notification', error);
       // တမင် throw မလုပ်ဘဲ ထားခဲ့လို့ရပါတယ်၊ သို့မှသာ notification မရောက်လို့ Booking ပျက်သွားတာမျိုး မဖြစ်မှာပါ
+    }
+  }
+
+  // Upload a file buffer to Firebase Storage
+  async uploadFile(
+    filePath: string,
+    buffer: Buffer,
+    contentType?: string,
+    bucketName?: string,
+  ) {
+    try {
+      const bucket = bucketName
+        ? admin.storage().bucket(bucketName)
+        : admin.storage().bucket();
+      const file = bucket.file(filePath);
+
+      await file.save(buffer, {
+        metadata: {
+          contentType: contentType || 'application/octet-stream',
+        },
+        resumable: false,
+      });
+
+      // Make the file publicly readable and return the public URL
+      await file.makePublic();
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
+      this.logger.log(`Uploaded file to ${publicUrl}`);
+      return { publicUrl };
+    } catch (error) {
+      this.logger.error('Error uploading file to Firebase Storage', error);
+      throw error;
+    }
+  }
+
+  // Generate a signed upload URL (PUT) for direct client uploads
+  async getSignedUploadUrl(
+    filePath: string,
+    expiresInSeconds = 60 * 5,
+    contentType?: string,
+    bucketName?: string,
+  ) {
+    try {
+      const bucket = bucketName
+        ? admin.storage().bucket(bucketName)
+        : admin.storage().bucket();
+      const file = bucket.file(filePath);
+
+      const [url] = await file.getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + expiresInSeconds * 1000,
+        contentType: contentType || 'application/octet-stream',
+      } as any);
+
+      // Also compute the public URL where file will be accessible after making public
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
+
+      return { uploadUrl: url, publicUrl };
+    } catch (error) {
+      this.logger.error('Error generating signed upload URL', error);
+      throw error;
     }
   }
 }

@@ -16,11 +16,23 @@ model User {
   id               Int       @id @default(autoincrement())
   email            String    @unique
   name             String?
+  full_name        String?
+  phone            String?
+  avatar_url       String?
+  nrc              String?
+  nrc_url          String?
+  gender           String?
+  postal_code      String?
+  location         String?
+  is_active        Boolean   @default(true)
+  is_blacklist     Boolean   @default(false)
   password         String
   refreshToken     String?
   fcmToken         String?   // 👈 Mobile Device Token for Push Notifications
   role             Role      @default(USER)
   bookings         Booking[]
+  inquiries        Inquiry[]
+  drivers          Driver[]
   
   // 👈 Add these two lines to connect User to Message model
   sentMessages     Message[] @relation("SentMessages")
@@ -43,6 +55,25 @@ model Car {
   updatedAt    DateTime  @updatedAt
 }
 
+model Driver {
+  id             Int       @id @default(autoincrement())
+  ownerId        Int
+  owner          User      @relation(fields: [ownerId], references: [id])
+  name           String
+  phone          String
+  photo_url      String?
+  license_img_url String?
+  gender         String?
+  status         String?   @default("available")
+  license_number String?
+  nrc            String?
+  postal_code    String?
+  location       String?
+  bookings       Booking[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
 model Booking {
   id        Int      @id @default(autoincrement())
   startDate DateTime
@@ -55,7 +86,12 @@ model Booking {
   
   carId     Int
   car       Car      @relation(fields: [carId], references: [id])
+
+  driverId  Int?
+  driver    Driver?  @relation(fields: [driverId], references: [id])
+
   notifications    Notification[]
+  inquiries  Inquiry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -88,6 +124,18 @@ model Notification {
   booking     Booking? @relation(fields: [bookingId], references: [id])
   
   createdAt   DateTime @default(now())
+}
+
+model Inquiry {
+  id              Int      @id @default(autoincrement())
+  submittedUserId Int
+  submittedUser   User     @relation(fields: [submittedUserId], references: [id])
+  type            String
+  content         String
+  status          String   @default("opened")
+  bookingId       Int?
+  booking         Booking? @relation(fields: [bookingId], references: [id])
+  createdAt       DateTime @default(now())
 }
 
 

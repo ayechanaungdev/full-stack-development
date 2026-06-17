@@ -4,6 +4,10 @@ import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
 
+/**
+ * Auth Service
+ * Business logic layer - uses UsersService (which uses Repository) for data access
+ */
 @Injectable()
 export class AuthService {
     constructor(

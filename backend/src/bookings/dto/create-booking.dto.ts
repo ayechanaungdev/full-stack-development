@@ -1,19 +1,29 @@
-import { IsInt, IsDateString, IsNumber, Min } from 'class-validator';
+import {
+  IsInt,
+  IsDateString,
+  IsNumber,
+  Min,
+  IsOptional,
+} from 'class-validator';
 
 export class CreateBookingDto {
-    @IsDateString()
-    startDate: string;
+  @IsDateString()
+  startDate: string;
 
-    @IsDateString()
-    endDate: string;
+  @IsDateString()
+  endDate: string;
 
-    @IsNumber()
-    @Min(0)
-    totalPrice: number;
+  @IsNumber()
+  @Min(0)
+  totalPrice: number;
 
-    @IsInt()
-    userId: number;
+  @IsInt()
+  userId: number;
 
-    @IsInt()
-    carId: number;
+  @IsInt()
+  carId: number;
+
+  @IsOptional()
+  @IsInt()
+  driverId?: number;
 }
