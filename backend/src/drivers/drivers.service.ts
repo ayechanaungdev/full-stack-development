@@ -3,34 +3,32 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { DriversRepository } from './drivers.repository';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 
+/**
+ * Drivers Service
+ * Business logic layer - uses Repository for data access
+ */
 @Injectable()
 export class DriversService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly driversRepository: DriversRepository) {}
 
   async create(data: CreateDriverDto & { ownerId: number }) {
-    return this.prisma.driver.create({
-      data,
-    });
+    return this.driversRepository.create(data);
   }
 
   async findAll(user: { userId: number; role: string }) {
     if (user.role === 'ADMIN') {
-      return this.prisma.driver.findMany();
+      return this.driversRepository.findAll();
     }
 
-    return this.prisma.driver.findMany({
-      where: { ownerId: user.userId },
-    });
+    return this.driversRepository.findByOwnerId(user.userId);
   }
 
   async findOne(id: number, user: { userId: number; role: string }) {
-    const driver = await this.prisma.driver.findUnique({
-      where: { id },
-    });
+    const driver = await this.driversRepository.findOne(id);
 
     if (!driver) {
       throw new NotFoundException('Driver not found');
@@ -48,9 +46,7 @@ export class DriversService {
     updateDriverDto: UpdateDriverDto,
     user: { userId: number; role: string },
   ) {
-    const driver = await this.prisma.driver.findUnique({
-      where: { id },
-    });
+    const driver = await this.driversRepository.findOne(id);
 
     if (!driver) {
       throw new NotFoundException('Driver not found');
@@ -60,16 +56,11 @@ export class DriversService {
       throw new ForbiddenException('Access denied');
     }
 
-    return this.prisma.driver.update({
-      where: { id },
-      data: updateDriverDto,
-    });
+    return this.driversRepository.update(id, updateDriverDto);
   }
 
   async remove(id: number, user: { userId: number; role: string }) {
-    const driver = await this.prisma.driver.findUnique({
-      where: { id },
-    });
+    const driver = await this.driversRepository.findOne(id);
 
     if (!driver) {
       throw new NotFoundException('Driver not found');
@@ -79,8 +70,15 @@ export class DriversService {
       throw new ForbiddenException('Access denied');
     }
 
-    return this.prisma.driver.delete({
-      where: { id },
-    });
+    return this.driversRepository.remove(id);
+  }
+
+  // Additional business logic methods using repository
+  async findByStatus(status: string) {
+    return this.driversRepository.findByStatus(status);
+  }
+
+  async findAvailable() {
+    return this.driversRepository.findAvailable();
   }
 }

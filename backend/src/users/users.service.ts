@@ -93,7 +93,9 @@ export class UsersService {
 
     // update the refresh token
     async updateRefreshToken(userId: number, refreshToken: string) {
-        return this.usersRepository.updateRefreshToken(userId, refreshToken);
+        // Hash it before saving, just like a password
+        const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
+        return this.usersRepository.updateRefreshToken(userId, hashedRefreshToken);
     }
 
     // Delete the refresh token the db (for Logout)

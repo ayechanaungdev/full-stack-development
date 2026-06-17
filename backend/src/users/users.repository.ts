@@ -34,8 +34,7 @@ export class UsersRepository extends BaseRepository<any> {
     });
   }
 
-  async updateRefreshToken(userId: number, refreshToken: string): Promise<any> {
-    const hashedRefreshToken = await this.hashToken(refreshToken);
+  async updateRefreshToken(userId: number, hashedRefreshToken: string): Promise<any> {
     return this.prisma.user.update({
       where: { id: userId },
       data: { refreshToken: hashedRefreshToken },
@@ -73,12 +72,5 @@ export class UsersRepository extends BaseRepository<any> {
     return this.prisma.user.findMany({
       where: { is_active: true },
     });
-  }
-
-  // Helper method to hash tokens
-  private async hashToken(token: string): Promise<string> {
-    const bcrypt = require('bcrypt');
-    const saltRounds = 10;
-    return await bcrypt.hash(token, saltRounds);
   }
 }
