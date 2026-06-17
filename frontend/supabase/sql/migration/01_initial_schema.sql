@@ -1,20 +1,21 @@
 -- 1. Create Profiles Table (Linked to Auth)
 CREATE TABLE public.profiles (
     id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
-    full_name TEXT NOT NULL,
+    full_name TEXT,
     phone TEXT,
     role TEXT CHECK (role IN ('renter', 'car_owner', 'admin')),
     avatar_url TEXT,
-    nrc TEXT NOT NULL,
-    gender TEXT NOT NULL,
-    postal_code TEXT NOT NULL,
-    location TEXT,
+    nrc TEXT,
+    nrc_url TEXT,
+    gender TEXT,
+    postal_code TEXT, -- township
+    location TEXT, -- detail address
     is_active BOOLEAN DEFAULT true,
     is_blacklist BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    expo_push_token TEXT,
-    nrc_url TEXT
+    expo_push_token TEXT
 );
+
 
 -- 1.1 *Validating General Phone No. Format
 ALTER TABLE profiles 
@@ -37,16 +38,16 @@ CREATE TABLE public.cars (
     owner_id UUID REFERENCES public.profiles(id),
     brand TEXT NOT NULL,
     model TEXT NOT NULL,
+    car_type TEXT,
+    car_number TEXT UNIQUE,
     price_per_day NUMERIC NOT NULL CHECK (price_per_day > 0),
     seats NUMERIC,
-    car_type TEXT,
+    has_ac BOOLEAN DEFAULT TRUE,
     status TEXT CHECK (status IN ('Available', 'Unavailable','Pending')),
     postal_code VARCHAR(10),
     location TEXT NOT NULL,
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    car_number TEXT UNIQUE,
-    has_ac BOOLEAN DEFAULT TRUE
 );
 
 -- 3. Create Drivers Table
@@ -56,15 +57,14 @@ CREATE TABLE public.drivers (
     name TEXT NOT NULL,
     phone TEXT NOT NULL,
     photo_url TEXT,
-    license_img_url TEXT,
-    gender TEXT NOT NULL,
-    status TEXT CHECK (status IN ('available', 'busy')),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     license_number TEXT,
+    license_img_url TEXT,
     nrc TEXT,
+    gender TEXT NOT NULL,
     postal_code TEXT,
     location TEXT,
-
+    status TEXT CHECK (status IN ('available', 'offline')), -- 'offline' = 'leave' status
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- 4. Create Car Images Table
@@ -80,21 +80,21 @@ CREATE TABLE public.car_images (
 CREATE TABLE public.bookings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id UUID REFERENCES public.profiles(id),
+    owner_id UUID REFERENCES public.profiles(id),
     car_id UUID REFERENCES public.cars(id),
     driver_id UUID REFERENCES public.drivers(id),
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    total_price NUMERIC NOT NULL,
-    pickup_location TEXT,
-    dropoff_location TEXT,
     pickup_time TIME,
     dropoff_time TIME,
-    status TEXT CHECK (status IN ('pending', 'approved', 'rejected', 'completed')),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    owner_id UUID REFERENCES public.profiles(id),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    pickup_location TEXT,
+    dropoff_location TEXT,
+    total_price NUMERIC NOT NULL,
+    status TEXT CHECK (status IN ('pending', 'approved','cancelled', 'rejected', 'completed')),
     note TEXT,
     is_read BOOLEAN DEFAULT false
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 );
 
 -- 6. Create Reviews Table
@@ -160,11 +160,11 @@ CREATE TABLE daily_reports (
     booking_ids JSONB,
     report_url TEXT,
     status TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     is_read BOOLEAN DEFAULT false
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 );
 
-----  12. Create Inquiries Table
+-- 12. Create Inquiries Table
 CREATE TABLE public.inquiries (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     submitted_user_id UUID REFERENCES public.profiles(id),
