@@ -32,6 +32,7 @@ model User {
   role             Role      @default(USER)
   bookings         Booking[]
   inquiries        Inquiry[]
+  drivers          Driver[]
   
   // 👈 Add these two lines to connect User to Message model
   sentMessages     Message[] @relation("SentMessages")
@@ -54,6 +55,25 @@ model Car {
   updatedAt    DateTime  @updatedAt
 }
 
+model Driver {
+  id             Int       @id @default(autoincrement())
+  ownerId        Int
+  owner          User      @relation(fields: [ownerId], references: [id])
+  name           String
+  phone          String
+  photo_url      String?
+  license_img_url String?
+  gender         String?
+  status         String?   @default("available")
+  license_number String?
+  nrc            String?
+  postal_code    String?
+  location       String?
+  bookings       Booking[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
 model Booking {
   id        Int      @id @default(autoincrement())
   startDate DateTime
@@ -66,8 +86,11 @@ model Booking {
   
   carId     Int
   car       Car      @relation(fields: [carId], references: [id])
-  notifications    Notification[]
 
+  driverId  Int?
+  driver    Driver?  @relation(fields: [driverId], references: [id])
+
+  notifications    Notification[]
   inquiries  Inquiry[]
 
   createdAt DateTime @default(now())

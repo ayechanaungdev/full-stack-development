@@ -12,6 +12,7 @@ import { InquiriesModule } from './inquiries/inquiries.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronModule } from './cron/cron.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { DriversModule } from './drivers/drivers.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UploadsModule } from './uploads/uploads.module';
     ChatModule,
     FirebaseModule,
     UploadsModule,
+    DriversModule,
     InquiriesModule,
     ScheduleModule.forRoot(),
     CronModule, // 👈 Schedule စနစ်ကို ဖွင့်လိုက်ပါပြီ

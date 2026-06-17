@@ -1,4 +1,4 @@
-export type ApiPayload = Record<string, unknown> | null;
+export type ApiPayload = unknown;
 
 export interface ApiError {
   status: number;
