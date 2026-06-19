@@ -6,34 +6,71 @@ import {
 import { UsersRepository } from './users.repository';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
-/**
- * Users Service
- * Business logic layer - uses Repository for data access
- */
+export type FlattenedUser = Record<string, any>;
+
 @Injectable()
 export class UsersService {
-    constructor(private usersRepository: UsersRepository) { }
+    constructor(
+        private usersRepository: UsersRepository,
+        private prisma: PrismaService,
+    ) { }
 
-    // create a user
+    // Fields that go on User (auth) vs Profile (details)
+    private readonly userFields = ['name', 'password', 'role', 'fcmToken', 'refreshToken'];
+    private readonly profileFields = ['full_name', 'phone', 'avatar_url', 'nrc', 'nrc_url', 'gender', 'postal_code', 'location', 'is_active', 'is_blacklist', 'expo_push_token'];
+
+    private isUserField(key: string): boolean {
+        return this.userFields.includes(key);
+    }
+
+    private isProfileField(key: string): boolean {
+        return this.profileFields.includes(key);
+    }
+
+    // Flatten a Prisma result (user + included profile) into the old combined shape
+    private flatten(user: any): FlattenedUser | null {
+        if (!user) return null;
+        const { profile, password, refreshToken, ...userData } = user;
+        if (!profile) return { ...userData };
+        const { id: _pid, createdAt: _pca, updatedAt: _pua, ...profileData } = profile;
+        return { ...userData, ...profileData };
+    }
+
+    // create a user + profile
     async create(createUserDto: CreateUserDto) {
         try {
-            // 1. Hash the password before saving! (10 is the "salt rounds" - security level)
             const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-            // 2. Save the user with the hashed password instead of the real one
-            const newUser = await this.usersRepository.create({
-                ...createUserDto,
-                password: hashedPassword, // 👈 Override the plain text password
-            });
-            // 3. Security: Separate the password from the rest of the user data for security reasons
-            const { password, ...userWithoutPassword } = newUser;
 
-            // 4. Return the user data without the password (clean object)
-            return userWithoutPassword;
+            const result = await this.prisma.$transaction(async (tx) => {
+                const userData: any = { email: createUserDto.email, password: hashedPassword };
+                userData.name = createUserDto.name ?? createUserDto.full_name ?? null;
+                if (createUserDto.role !== undefined) userData.role = createUserDto.role;
+
+                const newUser = await tx.user.create({ data: userData });
+
+                const profileData: any = {};
+                for (const field of this.profileFields) {
+                    if ((createUserDto as any)[field] !== undefined) {
+                        profileData[field] = (createUserDto as any)[field];
+                    }
+                }
+                if (Object.keys(profileData).length > 0) {
+                    profileData.id = newUser.id;
+                    await tx.profile.create({ data: profileData });
+                }
+
+                return tx.user.findUnique({
+                    where: { id: newUser.id },
+                    include: { profile: true },
+                });
+            });
+
+            return this.flatten(result);
 
         } catch (error) {
-            // ... (Keep your existing P2002 error handling here) ...
             if (error.code === 'P2002') {
                 const target = error.meta?.target as string[];
                 const fieldName = target ? target.join(', ') : 'field';
@@ -44,42 +81,74 @@ export class UsersService {
         }
     }
 
-    // find all users (SECURITY LEAK FIXED)
     async findAll() {
-        const users = await this.usersRepository.findAll();
-        // Remove password from every user before sending
-        return users.map(user => {
-            const { password, ...userWithoutPassword } = user;
-            return userWithoutPassword;
+        const users = await this.prisma.user.findMany({
+            include: { profile: true },
+        });
+        return users
+            .map(u => this.flatten(u))
+            .filter((u): u is FlattenedUser => u !== null);
+    }
+
+    async findOne(id: number) {
+        const user = await this.prisma.user.findUnique({
+            where: { id },
+            include: { profile: true },
+        });
+        return this.flatten(user);
+    }
+
+    async findByEmailForAuth(email: string) {
+        return this.prisma.user.findUnique({
+            where: { email },
+            include: {
+                profile: {
+                    select: { is_active: true, is_blacklist: true },
+                },
+            },
         });
     }
 
-    // find one user by id (SECURITY LEAK FIXED)
-    async findOne(id: number) {
-        const user = await this.usersRepository.findOne(id);
-        if (!user) return null; // Handle if user doesn't exist
-
-        const { password, ...userWithoutPassword } = user;
-        return userWithoutPassword;
-    }
-
-    // find user by email for auth
-    async findByEmailForAuth(email: string) {
-        return this.usersRepository.findByEmailForAuth(email);
-    }
-
-    // update a user by id (HASHING ADDED)
     async update(id: number, updateUserDto: UpdateUserDto) {
         try {
-            // 1. If they are trying to update their password, we must hash the new one!
-            if (updateUserDto.password) {
-                updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
-            }
-            // 2. Perform the update
-            const updatedUser = await this.usersRepository.update(id, updateUserDto);
-            // 3. Security: Separate the password before returning
-            const { password, ...userWithoutPassword } = updatedUser;
-            return userWithoutPassword;
+            await this.prisma.$transaction(async (tx) => {
+                const userUpdate: any = {};
+                for (const key of Object.keys(updateUserDto)) {
+                    if (this.isUserField(key)) {
+                        if (key === 'password') {
+                            userUpdate[key] = await bcrypt.hash((updateUserDto as any)[key], 10);
+                        } else {
+                            userUpdate[key] = (updateUserDto as any)[key];
+                        }
+                    }
+                }
+                if (Object.keys(userUpdate).length > 0) {
+                    await tx.user.update({ where: { id }, data: userUpdate });
+                }
+
+                if (!updateUserDto.password) {
+                    const profileUpdate: any = {};
+                    for (const key of Object.keys(updateUserDto)) {
+                        if (this.isProfileField(key)) {
+                            profileUpdate[key] = (updateUserDto as any)[key];
+                        }
+                    }
+                    if (Object.keys(profileUpdate).length > 0) {
+                        await tx.profile.upsert({
+                            where: { id },
+                            create: { id, ...profileUpdate },
+                            update: profileUpdate,
+                        });
+                    }
+                }
+            });
+
+            const updated = await this.prisma.user.findUnique({
+                where: { id },
+                include: { profile: true },
+            });
+            return this.flatten(updated);
+
         } catch (error) {
             if (error.code === 'P2002') {
                 const target = error.meta?.target as string[];
@@ -91,26 +160,25 @@ export class UsersService {
         }
     }
 
-    // update the refresh token
     async updateRefreshToken(userId: number, refreshToken: string) {
-        // Hash it before saving, just like a password
         const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
         return this.usersRepository.updateRefreshToken(userId, hashedRefreshToken);
     }
 
-    // Delete the refresh token the db (for Logout)
     async removeRefreshToken(userId: number) {
         return this.usersRepository.removeRefreshToken(userId);
     }
 
-    // remove a user by id
     async remove(id: number) {
         return this.usersRepository.remove(id);
     }
 
-    // Additional business logic methods using repository
     async findByEmail(email: string) {
-        return this.usersRepository.findByEmail(email);
+        const user = await this.prisma.user.findUnique({
+            where: { email },
+            include: { profile: true },
+        });
+        return this.flatten(user);
     }
 
     async updateFcmToken(userId: number, fcmToken: string) {
@@ -118,10 +186,15 @@ export class UsersService {
     }
 
     async findByRole(role: string) {
-        return this.usersRepository.findByRole(role);
+        const users = await this.prisma.user.findMany({
+            where: { role: role as any },
+            include: { profile: true },
+        });
+        return users.map(u => this.flatten(u)).filter((u): u is FlattenedUser => u !== null);
     }
 
     async findWithBookings(userId: number) {
-        return this.usersRepository.findWithBookings(userId);
+        const user = await this.usersRepository.findWithBookings(userId);
+        return this.flatten(user);
     }
 }

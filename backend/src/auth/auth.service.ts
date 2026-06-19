@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/c
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
+import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
 /**
@@ -13,6 +14,7 @@ export class AuthService {
     constructor(
         private usersService: UsersService,
         private jwtService: JwtService,
+        private prisma: PrismaService,
     ) { }
 
     // Helper method to generate tokens
@@ -56,19 +58,39 @@ export class AuthService {
         // 6. Save the refresh token hash to the database
         await this.usersService.updateRefreshToken(user.id, tokens.refreshToken);
 
-        // 7. Strip the password and old refreshToken before sending back to the user
-        const { password, refreshToken, ...userWithoutSecrets } = user;
+        // 7. Fetch full user data with profile and flatten into the old combined shape
+        const fullUser = await this.prisma.user.findUnique({
+            where: { id: user.id },
+            include: { profile: true },
+        });
+
+        if (!fullUser) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        const { password, refreshToken, profile, ...userData } = fullUser;
+        const { id: _pid, createdAt: _pca, updatedAt: _pua, ...profileData } = profile || {};
+        const flattenedUser = { ...userData, ...profileData };
 
         return {
-            ...tokens, // 👈 This spreads out { accessToken: "...", refreshToken: "..." }
-            user: userWithoutSecrets
+            ...tokens,
+            user: flattenedUser,
         };
     }
 
     // New method: Exchange a valid refresh token for a new access token
     async refreshTokens(userId: number, providedRefreshToken: string) {
-        // 1. Find the user by ID
-        const user = await this.usersService.findOne(userId);
+        // 1. Find the user by ID (auth query — includes refreshToken)
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                email: true,
+                password: true,
+                role: true,
+                refreshToken: true,
+            },
+        });
 
         // 2. If user doesn't exist, or doesn't have a token in the DB, reject
         if (!user || !user.refreshToken) {
