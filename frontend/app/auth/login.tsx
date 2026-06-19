@@ -1,9 +1,12 @@
-import { supabase } from "@/lib/supabase";
+// OLD: Supabase auth import (kept for reference)
+// import { supabase } from "@/lib/supabase";
+// import { makeRedirectUri } from "expo-auth-session";
+// import * as WebBrowser from "expo-web-browser";
+
+import { useAuthStore } from "@/store/useAuthStore";
 import { useFocusEffect } from "@react-navigation/native";
-import { makeRedirectUri } from "expo-auth-session";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import { CircleAlert, Eye, EyeOff } from "lucide-react-native";
 import React, { useCallback, useEffect, useState } from "react";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -35,8 +38,6 @@ import { Pressable } from "@/components/ui/pressable";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
 import { Keyboard } from "react-native";
-
-WebBrowser.maybeCompleteAuthSession();
 
 export default function Login() {
   const router = useRouter();
@@ -73,14 +74,6 @@ export default function Login() {
       setFormData((prev) => ({ ...prev, email: initialEmail }));
     }
   }, [initialEmail]);
-
-  // Warm up browser session for smoother OAuth
-  useEffect(() => {
-    WebBrowser.warmUpAsync();
-    return () => {
-      WebBrowser.coolDownAsync();
-    };
-  }, []);
 
   // Clear validation errors and show pending logout toast when entering the Login screen
   useFocusEffect(
@@ -136,153 +129,153 @@ export default function Login() {
 
     if (!password) {
       newErrors.password = "Please enter your password";
-    } else if (password.length > 20) {
-      newErrors.password = "Password exceeds maximum length";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  // OLD: Supabase email/password login (kept for reference)
+  // const handleEmailLogin = async () => {
+  //   if (!validateForm()) return;
+  //   try {
+  //     setLoading(true);
+  //     const { data, error } = await supabase.auth.signInWithPassword({
+  //       email: formData.email.trim(),
+  //       password: formData.password,
+  //     });
+  //     if (error) {
+  //       try {
+  //         const { data: emailStatus, error: rpcError } = await supabase.rpc(
+  //           "check_email_exists",
+  //           { email_to_check: formData.email.trim().toLowerCase() },
+  //         );
+  //         if (rpcError) throw rpcError;
+  //         if (!emailStatus) { setErrors({ email: "User not found" }); }
+  //         else { setErrors({ password: "Incorrect Password" }); }
+  //       } catch {
+  //         setStatusModal({ visible: true, title: "Server Error", message: "Unable to reach the server. Please try again later.", type: "error" });
+  //       }
+  //       return;
+  //     }
+  //     if (data.user) {
+  //       const { data: profile, error: profileError } = await supabase
+  //         .from("profiles").select("is_active, is_blacklist").eq("id", data.user.id).single();
+  //       if (profileError && profileError.code !== "PGRST116") throw profileError;
+  //       if (profile) {
+  //         if (profile.is_active === false && profile.is_blacklist === true) {
+  //           await supabase.auth.signOut();
+  //           setStatusModal({ visible: true, title: "Account Denied", message: "User is blacklisted. Please Contact Admin", type: "error" });
+  //           return;
+  //         }
+  //         if (profile.is_active === false) {
+  //           await supabase.auth.signOut();
+  //           setStatusModal({ visible: true, title: "Inactive Account", message: "Account is inactive. Please Contact Admin", type: "warning" });
+  //           return;
+  //         }
+  //       }
+  //       router.replace("/");
+  //     }
+  //   } catch (error: any) {
+  //     setStatusModal({ visible: true, title: "Server Error", message: error?.message || "Unable to reach the server. Please try again later.", type: "error" });
+  //   } finally { setLoading(false); }
+  // };
+
+  // NEW: Backend API email/password login
   const handleEmailLogin = async () => {
     if (!validateForm()) return;
 
     try {
       setLoading(true);
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: formData.email.trim(),
-        password: formData.password,
-      });
+      const store = useAuthStore.getState();
+      await store.login(formData.email.trim(), formData.password);
 
-      if (error) {
-        try {
-          const { data: emailStatus, error: rpcError } = await supabase.rpc(
-            "check_email_exists",
-            { email_to_check: formData.email.trim().toLowerCase() },
-          );
-
-          if (rpcError) throw rpcError;
-
-          if (!emailStatus) {
-            setErrors({ email: "User not found" });
-          } else {
-            setErrors({ password: "Incorrect Password" });
-          }
-        } catch (rpcError) {
+      const user = store.profile;
+      if (user) {
+        if (user.is_active === false && user.is_blacklist === true) {
+          await store.signOut();
           setStatusModal({
             visible: true,
-            title: "Server Error",
-            message: "Unable to reach the server. Please try again later.",
+            title: "Account Denied",
+            message: "User is blacklisted. Please Contact Admin",
             type: "error",
           });
+          return;
         }
-        return;
+        if (user.is_active === false) {
+          await store.signOut();
+          setStatusModal({
+            visible: true,
+            title: "Inactive Account",
+            message: "Account is inactive. Please Contact Admin",
+            type: "warning",
+          });
+          return;
+        }
       }
 
-      if (data.user) {
-        // Account Status Validation
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("is_active, is_blacklist")
-          .eq("id", data.user.id)
-          .single();
-
-        if (profileError && profileError.code !== "PGRST116") {
-          throw profileError;
-        }
-
-        if (profile) {
-          if (profile.is_active === false && profile.is_blacklist === true) {
-            await supabase.auth.signOut();
-            setStatusModal({
-              visible: true,
-              title: "Account Denied",
-              message: "User is blacklisted. Please Contact Admin",
-              type: "error",
-            });
-            return;
-          }
-          if (profile.is_active === false) {
-            await supabase.auth.signOut();
-            setStatusModal({
-              visible: true,
-              title: "Inactive Account",
-              message: "Account is inactive. Please Contact Admin",
-              type: "warning",
-            });
-            return;
-          }
-        }
-
-        router.replace("/");
-      }
+      router.replace("/");
     } catch (error: any) {
-      setStatusModal({
-        visible: true,
-        title: "Server Error",
-        message:
-          error?.message ||
-          "Unable to reach the server. Please try again later.",
-        type: "error",
-      });
+      const msg = error?.message || "Unable to reach the server. Please try again later.";
+      if (msg.toLowerCase().includes("email") || msg.toLowerCase().includes("not found")) {
+        setErrors({ email: "User not found" });
+      } else if (msg.toLowerCase().includes("password")) {
+        setErrors({ password: "Incorrect Password" });
+      } else {
+        setStatusModal({
+          visible: true,
+          title: "Server Error",
+          message: msg,
+          type: "error",
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // OLD: Supabase Google OAuth login (kept for reference)
+  // const handleGoogleLogin = useCallback(async () => {
+  //   try {
+  //     setLoading(true);
+  //     const redirectTo = makeRedirectUri({
+  //       scheme: "carrentalpractice",
+  //       path: "auth/callback",
+  //     });
+  //     const { data, error } = await supabase.auth.signInWithOAuth({
+  //       provider: "google",
+  //       options: {
+  //         redirectTo,
+  //         skipBrowserRedirect: true,
+  //         queryParams: { prompt: "select_account" },
+  //       },
+  //     });
+  //     if (error) throw error;
+  //     if (!data?.url) throw new Error("Could not initialize Google login.");
+  //     const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  //     if (result.type === "success") {
+  //       const { access_token, refresh_token } = parseAuthSessionUrl(result.url);
+  //       if (access_token && refresh_token) {
+  //         const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
+  //         if (sessionError) throw sessionError;
+  //         router.replace("/");
+  //       } else {
+  //         router.replace({ pathname: "/auth/callback", params: { url: encodeURIComponent(result.url) } });
+  //       }
+  //     }
+  //   } catch (error: any) {
+  //     setStatusModal({ visible: true, title: "Authentication Error", message: error.message || "Could not initialize Google login.", type: "error" });
+  //   } finally { setLoading(false); }
+  // }, [router]);
+  // NEW: Google login not available yet via backend
   const handleGoogleLogin = useCallback(async () => {
-    try {
-      setLoading(true);
-      const redirectTo = makeRedirectUri({
-        scheme: "carrentalpractice",
-        path: "auth/callback",
-      });
-
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo,
-          skipBrowserRedirect: true,
-          queryParams: { prompt: "select_account" },
-        },
-      });
-
-      if (error) throw error;
-      if (!data?.url) throw new Error("Could not initialize Google login.");
-
-      const result = await WebBrowser.openAuthSessionAsync(
-        data.url,
-        redirectTo,
-      );
-
-      if (result.type === "success") {
-        const { access_token, refresh_token } = parseAuthSessionUrl(result.url);
-
-        if (access_token && refresh_token) {
-          const { error: sessionError } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-          if (sessionError) throw sessionError;
-          router.replace("/");
-        } else {
-          router.replace({
-            pathname: "/auth/callback",
-            params: { url: encodeURIComponent(result.url) },
-          });
-        }
-      }
-    } catch (error: any) {
-      setStatusModal({
-        visible: true,
-        title: "Authentication Error",
-        message: error.message || "Could not initialize Google login.",
-        type: "error",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [router]);
+    setStatusModal({
+      visible: true,
+      title: "Coming Soon",
+      message: "Google login is not available yet. Please use email and password to sign in.",
+      type: "info",
+    });
+  }, []);
 
   return (
     <SafeAreaView
@@ -383,7 +376,6 @@ export default function Login() {
                   secureTextEntry={!showPassword}
                   autoComplete="off"
                   className="pl-3 ios:leading-tight text-gray-900"
-                  maxLength={20}
                   style={{ letterSpacing: 0, backgroundColor: "transparent" }}
                 />
                 <InputSlot className="pr-3" onPress={handleTogglePassword}>
@@ -541,17 +533,22 @@ export default function Login() {
   );
 }
 
-// --- Utilities ---
-const parseAuthSessionUrl = (url: string) => {
-  const params: Record<string, string> = {};
-  const urlToParse = url.replace("#", "?");
-  const queryParams = urlToParse.split("?")[1] || "";
-  queryParams.split("&").forEach((part) => {
-    const [key, value] = part.split("=");
-    if (key && value) params[key] = value;
-  });
-  return {
-    access_token: params.access_token,
-    refresh_token: params.refresh_token,
-  };
-};
+// OLD: WebBrowser warmup effect (kept for reference)
+// useEffect(() => {
+//   WebBrowser.warmUpAsync();
+//   return () => { WebBrowser.coolDownAsync(); };
+// }, []);
+
+// OLD: parseAuthSessionUrl utility for Google OAuth callback (kept for reference)
+// const parseAuthSessionUrl = (url: string) => {
+//   const params: Record<string, string> = {};
+//   const urlToParse = url.replace("#", "?");
+//   const queryParams = urlToParse.split("?")[1] || "";
+//   queryParams.split("&").forEach((part) => {
+//     const [key, value] = part.split("=");
+//     if (key && value) params[key] = value;
+//   });
+//   return { access_token: params.access_token, refresh_token: params.refresh_token };
+// };
+
+

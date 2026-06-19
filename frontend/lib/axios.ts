@@ -47,12 +47,15 @@ class ApiClient {
           try {
             const refreshToken = await this.getRefreshToken();
             if (refreshToken) {
-              const response = await this.client.post('/auth/refresh', {
-                refreshToken,
+              // OLD: sent refresh token in body
+              // const response = await this.client.post('/auth/refresh', { refreshToken });
+              // NEW: backend expects refresh token in Authorization header
+              const response = await this.client.post('/auth/refresh', null, {
+                headers: { Authorization: `Bearer ${refreshToken}` },
               });
 
-              const { accessToken } = response.data;
-              await this.setToken(accessToken);
+              const { accessToken, refreshToken: newRefresh } = response.data;
+              await this.setTokens(accessToken, newRefresh);
 
               // Retry original request with new token
               originalRequest.headers.Authorization = `Bearer ${accessToken}`;
@@ -61,7 +64,6 @@ class ApiClient {
           } catch (refreshError) {
             // Refresh failed, logout user
             await this.clearTokens();
-            // Navigate to login (implement based on your routing)
             return Promise.reject(refreshError);
           }
         }
@@ -90,15 +92,25 @@ class ApiClient {
     }
   }
 
-  private async setToken(token: string): Promise<void> {
+  // OLD: private setToken — saved only accessToken
+  // private async setToken(token: string): Promise<void> { ... }
+  // OLD: private clearTokens — was private
+  // private async clearTokens(): Promise<void> { ... }
+
+  // NEW: public setTokens — saves both access + refresh
+  public async setTokens(accessToken: string, refreshToken: string): Promise<void> {
     try {
-      await AsyncStorage.setItem('accessToken', token);
+      await AsyncStorage.multiSet([
+        ['accessToken', accessToken],
+        ['refreshToken', refreshToken],
+      ]);
     } catch (error) {
-      console.error('Error setting token:', error);
+      console.error('Error setting tokens:', error);
     }
   }
 
-  private async clearTokens(): Promise<void> {
+  // NEW: public clearTokens — for store/axios interceptor use
+  public async clearTokens(): Promise<void> {
     try {
       await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
     } catch (error) {
@@ -112,6 +124,9 @@ class ApiClient {
   }
 }
 
-// Export singleton instance
-export const apiClient = new ApiClient().getClient();
+// OLD: export default apiClient; (single export)
+// NEW: also export tokenManager for store to call setTokens/clearTokens
+const apiClientInstance = new ApiClient();
+export const apiClient = apiClientInstance.getClient();
+export { apiClientInstance as tokenManager };
 export default apiClient;

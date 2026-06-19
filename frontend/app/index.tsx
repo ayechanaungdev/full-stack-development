@@ -15,7 +15,10 @@ import React, { useEffect } from "react";
 export default function Index() {
   const router = useRouter();
   const rootNavigationState = useRootNavigationState();
-  const { session, isLoading, isInitialized, isProfileComplete, error, fetchProfile } =
+  // OLD: destructured only session (Supabase session had .user inside)
+  // const { session, isLoading, isInitialized, isProfileComplete, error, fetchProfile } = useAuthStore();
+  // NEW: also destructure user (backend auth stores user separately)
+  const { session, user, isLoading, isInitialized, isProfileComplete, error, fetchProfile } =
     useAuthStore();
 
   /**
@@ -47,9 +50,12 @@ export default function Index() {
   /**
    * Action: Manually triggers a profile fetch retry.
    */
+  // OLD: fetchProfile(session.user.id)
+  // const handleRetry = () => { if (session?.user.id) { fetchProfile(session.user.id); } };
+  // NEW: fetchProfile(user.id)
   const handleRetry = () => {
-    if (session?.user.id) {
-      fetchProfile(session.user.id);
+    if (user?.id) {
+      fetchProfile(user.id);
     }
   };
 

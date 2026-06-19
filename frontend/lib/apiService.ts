@@ -18,7 +18,12 @@ class ApiService {
   }
 
   async refreshTokens(refreshToken: string) {
-    const response = await apiClient.post('/auth/refresh', { refreshToken });
+    // OLD: body-based refresh
+    // const response = await apiClient.post('/auth/refresh', { refreshToken });
+    // NEW: backend expects refresh token in Authorization header
+    const response = await apiClient.post('/auth/refresh', null, {
+      headers: { Authorization: `Bearer ${refreshToken}` },
+    });
     return response.data;
   }
 

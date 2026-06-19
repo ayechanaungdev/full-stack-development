@@ -51,7 +51,9 @@ const formatDateSeparator = (dateString: string) => {
 export default function ChatScreen() {
   const headerHeight = useHeaderHeight();
   const { userId: otherUserId } = useLocalSearchParams<{ userId: string }>();
-  const { session } = useAuthStore();
+  // OLD: const { session } = useAuthStore(); — session.user.id for chat
+  // NEW: use user from store (backend auth stores user separately)
+  const { user: currentUser } = useAuthStore();
   const queryClient = useQueryClient();
   const {
     messages,
@@ -100,15 +102,15 @@ export default function ChatScreen() {
   }, [otherUserId]);
 
   useEffect(() => {
-    if (session?.user?.id && otherUserId) {
+    if (currentUser?.id && otherUserId) {
       const markConversationRead = async () => {
-        const messageReadCount = await markAsRead(session.user.id, otherUserId);
+        const messageReadCount = await markAsRead(currentUser.id, otherUserId);
 
         const { data: updatedNotifications } = await supabase
           .from("notifications")
           .update({ is_read: true })
           .select("id")
-          .eq("receiver_id", session.user.id)
+          .eq("receiver_id", currentUser.id)
           .eq("sender_id", otherUserId)
           .eq("type", "message")
           .eq("is_read", false);
@@ -117,7 +119,7 @@ export default function ChatScreen() {
 
         if (notificationReadCount > 0 || messageReadCount > 0) {
           queryClient.setQueryData(
-            ["badge-counts", session.user.id],
+            ["badge-counts", currentUser.id],
             (oldData: any) => {
               if (!oldData) return oldData;
               return {
@@ -135,9 +137,9 @@ export default function ChatScreen() {
 
       setActivePartnerId(otherUserId);
       clearMessages();
-      fetchMessages(session.user.id, otherUserId);
+      fetchMessages(currentUser.id, otherUserId);
       markConversationRead();
-      const unsubscribe = subscribeToMessages(session.user.id);
+      const unsubscribe = subscribeToMessages(currentUser.id);
       return () => {
         unsubscribe();
         clearMessages();
@@ -145,7 +147,7 @@ export default function ChatScreen() {
       };
     }
   }, [
-    session?.user?.id,
+    currentUser?.id,
     otherUserId,
     fetchMessages,
     markAsRead,
@@ -161,7 +163,7 @@ export default function ChatScreen() {
   );
 
   const handleSend = async () => {
-    if (!inputText.trim() || !session?.user?.id || !otherUserId) return;
+    if (!inputText.trim() || !currentUser?.id || !otherUserId) return;
     // 2. Check Network Connection
     const state = await NetInfo.fetch();
     if (!state.isConnected) {
@@ -178,7 +180,7 @@ export default function ChatScreen() {
     try {
       // Clear the input only AFTER confirming we are online
       setInputText("");
-      await sendMessage(session.user.id, otherUserId, content);
+      await sendMessage(currentUser.id, otherUserId, content);
     } catch {
       // If the database insert fails (e.g., server down), put the text back
       setInputText(content);
@@ -259,7 +261,7 @@ export default function ChatScreen() {
                 }}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item, index }) => {
-                  const isMine = item.sender_id === session?.user?.id;
+                  const isMine = item.sender_id === currentUser?.id;
                   const showDateSeparator =
                     index === reversedMessages.length - 1 ||
                     new Date(

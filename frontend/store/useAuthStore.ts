@@ -1,15 +1,45 @@
-import { supabase } from "@/lib/supabase";
-import adapters from "@/lib/serviceAdapters";
-import { RealtimeChannel, Session, User } from "@supabase/supabase-js";
-import { decode, encode as b64encode } from "base-64";
-import { AppState, AppStateStatus } from "react-native";
+// ================================================================
+// OLD: Supabase Auth Store (kept for reference)
+// ================================================================
+// import { supabase } from "@/lib/supabase";
+// import adapters from "@/lib/serviceAdapters";
+// import { RealtimeChannel, Session, User } from "@supabase/supabase-js";
+// import { decode, encode as b64encode } from "base-64";
+// import { AppState, AppStateStatus } from "react-native";
+// import { create } from "zustand";
+//
+// export interface Profile {
+//   id: string;
+//   full_name: string | null;
+//   phone: string | null;
+//   role: "renter" | "car_owner" | "admin" | null;
+//   avatar_url: string | null;
+//   nrc: string | null;
+//   nrc_url: string | null;
+//   gender: string | null;
+//   postal_code: string | null;
+//   location: string | null;
+//   is_active: boolean;
+//   is_blacklist: boolean;
+//   created_at: string;
+// }
+//
+// ... (full old store at the bottom of this file)
+// ================================================================
+
+// ================================================================
+// NEW: Backend Auth Store (active)
+// ================================================================
+import { tokenManager } from "@/lib/axios";
+import apiClient from "@/lib/axios";
 import { create } from "zustand";
 
 export interface Profile {
-  id: string;
+  id: number;
+  email: string;
+  name: string | null;
   full_name: string | null;
   phone: string | null;
-  role: "renter" | "car_owner" | "admin" | null;
   avatar_url: string | null;
   nrc: string | null;
   nrc_url: string | null;
@@ -18,468 +48,424 @@ export interface Profile {
   location: string | null;
   is_active: boolean;
   is_blacklist: boolean;
-  created_at: string;
+  role: "USER" | "ADMIN";
+  fcmToken: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface AuthState {
-  session: Session | null;
-  user: User | null;
+  session: { accessToken: string; refreshToken: string } | null;
+  user: Profile | null;
   profile: Profile | null;
   setProfile: (profile: Profile | null) => void;
-  role: "renter" | "car_owner" | "admin" | null;
+  role: "USER" | "ADMIN" | null;
   isLoading: boolean;
-  isInitialized: boolean; // true after the first getSession() call completes
+  isInitialized: boolean;
   isVerifying: boolean;
   avatarUri: string | null;
   avatarBase64: string | null;
-  profileSubscription: RealtimeChannel | null;
   error: string | null;
 
   // Actions
-  initialize: () => Promise<void>; // Call once on app start to hydrate from storage
-  setSession: (session: Session | null) => Promise<void>;
-  fetchProfile: (userId: string, silent?: boolean) => Promise<void>;
+  initialize: () => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  setSession: (session: { accessToken: string; refreshToken: string } | null, user?: Profile) => Promise<void>;
+  fetchProfile: (userId: number, silent?: boolean) => Promise<void>;
   signOut: () => Promise<void>;
   setIsVerifying: (val: boolean) => void;
   isProfileComplete: () => boolean;
   setAvatarUri: (uri: string | null, base64?: string | null) => void;
-  uploadAvatar: (
-    uri: string,
-    userId: string,
-    base64?: string | null,
-  ) => Promise<string | null>;
-  subscribeToProfile: (userId: string) => void;
-  unsubscribeFromProfile: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => {
-  // Copies missing OAuth metadata fields into the DB profile row.
-  const syncMetadataToProfile = async (
-    userId: string,
-    profileData: any,
-    metadata: any,
-  ) => {
-    if (!metadata) return profileData;
+const AUTH_STORAGE_KEY = "backend_auth";
 
-    const updates: any = {};
-    const fieldsToSync = [
-      "avatar_url",
-      "nrc",
-      "gender",
-      "postal_code",
-      "location",
-      "phone",
-    ];
-
-    fieldsToSync.forEach((field) => {
-      if (!profileData[field] && metadata[field]) {
-        updates[field] = metadata[field];
-        profileData[field] = metadata[field];
-      }
-    });
-
-    if (Object.keys(updates).length > 0) {
-      const { error } = await supabase
-        .from("profiles")
-        .update(updates)
-        .eq("id", userId);
-      if (error) throw error;
-    }
-
-    return profileData;
-  };
-
-  return {
-    session: null,
-    user: null,
-    profile: null,
-    role: null,
-    isLoading: true, // true on startup to prevent flash of login screen
-    isInitialized: false,
-    isVerifying: false,
-    avatarUri: null,
-    avatarBase64: null,
-    profileSubscription: null,
-    error: null,
-
-    // Hydrates the store from persisted storage on cold start.
-    // This is the ONLY reliable way to get the session on first open because
-    // onAuthStateChange(INITIAL_SESSION) can fire before AsyncStorage is ready.
-    initialize: async () => {
-      // Prevent double-initialization
-      if (get().isInitialized) return;
-
-      try {
-        set({ isLoading: true, error: null });
-
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-
-        if (sessionError) throw sessionError;
-
-        await get().setSession(session);
-      } catch (error: any) {
-        console.warn("Auth initialization failed:", error);
-        set({
-          isLoading: false,
-          error: error?.message || "Unable to restore session",
-        });
-      } finally {
-        set({ isInitialized: true });
-      }
-    },
-
-    // Toggles the email-verification flow guard.
-    setIsVerifying: (isVerifying: boolean) => set({ isVerifying }),
-
-    // Stores the local avatar URI and optional base64 data.
-    setAvatarUri: (
-      avatarUri: string | null,
-      avatarBase64: string | null = null,
-    ) => set({ avatarUri, avatarBase64 }),
-
-    // Updates session state; fetches profile on new sign-in, clears state on sign-out.
-    setSession: async (session: Session | null) => {
-      try {
-        const currentSession = get().session;
-
-        // Skip if the access token hasn't changed and the profile is already loaded.
-        if (
-          currentSession?.access_token === session?.access_token &&
-          !!session &&
-          !!get().profile
-        ) {
-          set({
-            session,
-            user: session.user,
-            isLoading: false,
-            error: null,
-          });
-          if (session.user.id) {
-            get().subscribeToProfile(session.user.id);
-          }
-          return;
-        }
-
-        if (!session) {
-          get().unsubscribeFromProfile();
-          set({
-            session: null,
-            user: null,
-            profile: null,
-            role: null,
-            isLoading: false,
-          });
-          return;
-        }
-
-        set({ session, user: session.user, isLoading: true });
-        await get().fetchProfile(session.user.id);
-        get().subscribeToProfile(session.user.id);
-      } catch {
-        set({ isLoading: false });
-      }
-    },
-
-    // Updates profile and role only if the profile data has changed.
-    setProfile: (profile) =>
-      set((state) => {
-        if (JSON.stringify(state.profile) === JSON.stringify(profile)) {
-          return state;
-        }
-        return {
-          profile,
-          role: profile?.role || null,
-        };
-      }),
-
-    // Fetches the user profile from DB; signs out if account is blocked.
-    fetchProfile: async (userId: string, silent = false) => {
-      try {
-        if (!silent) set({ isLoading: true, error: null });
-
-        const { data, error } = await Promise.race([
-          supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-          new Promise<any>((_, reject) =>
-            setTimeout(() => reject(new Error("Timeout")), 30000),
-          ),
-        ]);
-
-        if (error) throw error;
-
-        if (data) {
-          if (data.is_active === false || data.is_blacklist === true) {
-            await get().signOut();
-            return;
-          }
-
-          const metadata = get().session?.user?.user_metadata;
-          const syncedData = await syncMetadataToProfile(
-            userId,
-            data,
-            metadata,
-          );
-
-          set({
-            profile: syncedData as Profile,
-            role: syncedData.role as "renter" | "car_owner" | "admin",
-            isLoading: false,
-          });
-        } else {
-          set({ profile: null, role: null, isLoading: false });
-        }
-      } catch (error: any) {
-        set({ isLoading: false, error: error.message || "Unknown error" });
-      }
-    },
-
-    // Signs out from Supabase and clears all auth state.
-    signOut: async () => {
-      try {
-        get().unsubscribeFromProfile();
-        await supabase.auth.signOut();
-      } finally {
-        set({
-          session: null,
-          user: null,
-          profile: null,
-          role: null,
-          isLoading: false,
-        });
-      }
-    },
-
-    // Uploads avatar image using backend storage adapter and returns the public URL.
-    uploadAvatar: async (
-      uri: string,
-      userId: string,
-      base64?: string | null,
-    ) => {
-      try {
-        const fileExt = uri.split(".").pop()?.split("?")[0] || "jpg";
-        const fileName = `${userId}.${fileExt}`;
-        const finalBase64 = base64 || get().avatarBase64;
-        const contentType = `image/${fileExt === "jpg" ? "jpeg" : fileExt}`;
-        const token = get().session?.access_token as unknown as
-          | string
-          | undefined;
-
-        // Try signed URL flow first (server returns uploadUrl + publicUrl).
-        try {
-          const signed = await adapters.storageService.getSignedUrl(
-            fileName,
-            contentType,
-            60 * 5,
-            token,
-          );
-
-          const { uploadUrl, publicUrl } = signed;
-          // Upload the file directly to the signed URL
-          if (finalBase64) {
-            // finalBase64 may include data: prefix — strip it
-            const comma = finalBase64.indexOf(",");
-            const raw = comma >= 0 ? finalBase64.slice(comma + 1) : finalBase64;
-            const binary = decode(raw);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++)
-              bytes[i] = binary.charCodeAt(i);
-            await fetch(uploadUrl, {
-              method: "PUT",
-              body: bytes,
-              headers: { "Content-Type": contentType },
-            } as any);
-          } else {
-            const response = await fetch(uri);
-            const blob = await response.blob();
-            await fetch(uploadUrl, {
-              method: "PUT",
-              body: blob,
-              headers: { "Content-Type": contentType },
-            } as any);
-          }
-
-          return publicUrl;
-        } catch (err) {
-          // Signed URL failed — fallback to base64 server upload
-          if (finalBase64) {
-            const res = await adapters.storageService.uploadBase64(
-              fileName,
-              finalBase64,
-              contentType,
-              token,
-            );
-            return res?.publicUrl || null;
-          }
-
-          // Fetch uri and convert to base64 then upload
-          try {
-            const resp = await fetch(uri);
-            const blob = await resp.blob();
-            // Read blob as base64
-            const arrayBuffer = await blob.arrayBuffer();
-            const bytes = new Uint8Array(arrayBuffer);
-            let binary = "";
-            for (let i = 0; i < bytes.length; i++)
-              binary += String.fromCharCode(bytes[i]);
-            const b64 = `data:${contentType};base64,${b64encode(binary)}`;
-            const res = await adapters.storageService.uploadBase64(
-              fileName,
-              b64,
-              contentType,
-              token,
-            );
-            return res?.publicUrl || null;
-          } catch {
-            return null;
-          }
-        }
-      } catch {
-        return null;
-      }
-    },
-
-    // Returns true if all required profile fields are filled.
-    isProfileComplete: () => {
-      const { profile } = get();
-      if (!profile) return false;
-      return !!(
-        profile.full_name?.trim() &&
-        profile.nrc?.trim() &&
-        profile.gender &&
-        profile.postal_code?.trim()
-      );
-    },
-
-    // Opens a realtime channel to watch profile changes and react to account blocks.
-    subscribeToProfile: (userId: string) => {
-      if (get().profileSubscription) return;
-
-      const channel = supabase
-        .channel(`profile-updates-${userId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "profiles",
-            filter: `id=eq.${userId}`,
-          },
-          (payload) => {
-            const newProfile = payload.new as Profile;
-
-            if (
-              newProfile.is_active === false ||
-              newProfile.is_blacklist === true
-            ) {
-              get().signOut();
-            } else {
-              set({
-                profile: newProfile,
-                role: newProfile.role as "renter" | "car_owner" | "admin",
-              });
-            }
-          },
-        )
-        .subscribe();
-
-      set({ profileSubscription: channel });
-    },
-
-    // Removes the realtime profile channel subscription.
-    unsubscribeFromProfile: () => {
-      const { profileSubscription } = get();
-      if (profileSubscription) {
-        supabase.removeChannel(profileSubscription);
-        set({ profileSubscription: null });
-      }
-    },
-  };
-});
-
-// Listens for post-initialization auth events.
-// INITIAL_SESSION is intentionally ignored here — it races against AsyncStorage hydration
-// and can deliver a null session before storage is ready. The `initialize()` action
-// calls getSession() directly and is the single source of truth on cold start.
-supabase.auth.onAuthStateChange(async (event, session) => {
-  const { isVerifying, isInitialized, setSession } = useAuthStore.getState();
-  if (isVerifying) return;
-
-  // Skip INITIAL_SESSION — handled by initialize() to avoid the cold-start race condition.
-  if (event === "INITIAL_SESSION") return;
-
-  if (event === "TOKEN_REFRESHED" && session) {
-    useAuthStore.setState({ session, user: session.user });
-    return;
-  }
-
-  // For SIGNED_IN / SIGNED_OUT events, only process them after initialization is done
-  // to avoid duplicate calls with the initialize() flow.
-  if (!isInitialized) return;
-
-  setSession(session);
-});
-
-// Restores session when app returns to foreground after a long background sleep.
-// On Android, the JS context can be killed, clearing the in-memory store state.
-// On resume, we re-hydrate from storage and update the store if the session was lost.
-AppState.addEventListener("change", async (nextState: AppStateStatus) => {
-  if (nextState !== "active") return;
-
+const saveToStorage = async (data: object) => {
   try {
-    const store = useAuthStore.getState();
-    // Only run recovery if we've already initialized (prevents conflict with cold start)
-    if (!store.isInitialized) return;
+    const { AsyncStorage } = await import("@react-native-async-storage/async-storage");
+    await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
+  } catch {}
+};
 
-    const { data, error: sessionError } = await supabase.auth.getSession();
-
-    if (sessionError) {
-      console.warn(
-        "Session recovery failed while reading storage:",
-        sessionError,
-      );
-      await store.signOut();
-      return;
-    }
-
-    if (data.session && !store.session) {
-      // Session was in storage but got cleared from memory — restore it
-      await store.setSession(data.session);
-      return;
-    }
-
-    if (!data.session && store.session) {
-      // Access token may be expired but the refresh token can still be recovered
-      // from the in-memory session. Use it explicitly to avoid the
-      // "Refresh Token Not Found" path when storage is stale or unavailable.
-      const refreshToken = store.session?.refresh_token;
-
-      if (!refreshToken) {
-        console.warn("No refresh token available on app resume; signing out.");
-        await store.signOut();
-        return;
-      }
-
-      const { data: refreshed, error: refreshError } =
-        await supabase.auth.refreshSession({ refresh_token: refreshToken });
-
-      if (refreshError) {
-        console.warn("Session refresh failed on app resume:", refreshError);
-        await store.signOut();
-        return;
-      }
-
-      if (refreshed.session) {
-        // Refresh succeeded — restore the new session silently
-        await store.setSession(refreshed.session);
-      } else {
-        // Refresh token is also invalid/expired — sign out cleanly
-        await store.setSession(null);
-      }
-    }
-  } catch (error) {
-    console.warn("Unexpected auth recovery error on app resume:", error);
-    await useAuthStore.getState().signOut();
+const loadFromStorage = async (): Promise<{
+  session: { accessToken: string; refreshToken: string } | null;
+  user: Profile | null;
+} | null> => {
+  try {
+    const { default: AsyncStorage } = await import("@react-native-async-storage/async-storage");
+    const raw = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
-});
+};
+
+const removeFromStorage = async () => {
+  try {
+    const { default: AsyncStorage } = await import("@react-native-async-storage/async-storage");
+    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {}
+};
+
+export const useAuthStore = create<AuthState>((set, get) => ({
+  session: null,
+  user: null,
+  profile: null,
+  role: null,
+  isLoading: true,
+  isInitialized: false,
+  isVerifying: false,
+  avatarUri: null,
+  avatarBase64: null,
+  error: null,
+
+  // OLD: initialize() used supabase.auth.getSession()
+  // NEW: read tokens + user from AsyncStorage
+  initialize: async () => {
+    if (get().isInitialized) return;
+    try {
+      set({ isLoading: true, error: null });
+      const stored = await loadFromStorage();
+      if (stored?.session && stored?.user) {
+        set({
+          session: stored.session,
+          user: stored.user,
+          profile: stored.user,
+          role: stored.user.role,
+          isLoading: false,
+          isInitialized: true,
+        });
+        await tokenManager.setTokens(stored.session.accessToken, stored.session.refreshToken);
+      } else {
+        set({ isLoading: false, isInitialized: true });
+      }
+    } catch (error: any) {
+      set({ isLoading: false, error: error?.message || "Unable to restore session", isInitialized: true });
+    }
+  },
+
+  setIsVerifying: (isVerifying: boolean) => set({ isVerifying }),
+
+  setAvatarUri: (avatarUri: string | null, avatarBase64: string | null = null) =>
+    set({ avatarUri, avatarBase64 }),
+
+  // OLD: setSession took Supabase Session | null
+  // NEW: takes { accessToken, refreshToken } | null + optional user
+  setSession: async (session, user) => {
+    if (!session) {
+      set({ session: null, user: null, profile: null, role: null, isLoading: false });
+      await removeFromStorage();
+      return;
+    }
+    if (user) {
+      set({ session, user, profile: user, role: user.role, isLoading: false });
+      await saveToStorage({ session, user });
+      await tokenManager.setTokens(session.accessToken, session.refreshToken);
+    } else {
+      set({ session, isLoading: false });
+    }
+  },
+
+  setProfile: (profile) =>
+    set((state) => {
+      if (JSON.stringify(state.profile) === JSON.stringify(profile)) return state;
+      return { profile, role: profile?.role || null };
+    }),
+
+  // NEW: login via backend /auth/login
+  login: async (email: string, password: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      console.log("[AUTH] Login attempt to:", apiClient.defaults.baseURL + "/auth/login");
+      const response = await apiClient.post("/auth/login", { email, password });
+      console.log("[AUTH] Login success, status:", response.status);
+      const { accessToken, refreshToken, user } = response.data;
+
+      const profile: Profile = user;
+      const session = { accessToken, refreshToken };
+
+      set({
+        session,
+        user: profile,
+        profile,
+        role: profile.role,
+        isLoading: false,
+        error: null,
+      });
+
+      await saveToStorage({ session, user: profile });
+      await tokenManager.setTokens(accessToken, refreshToken);
+    } catch (error: any) {
+      console.log("[AUTH] Login error:", error?.response?.status, error?.response?.data, error?.message);
+      const message = error?.response?.data?.message || error?.message || "Login failed";
+      set({ isLoading: false, error: message });
+      throw new Error(message);
+    }
+  },
+
+  // OLD: fetchProfile used supabase.from("profiles").select("*")
+  // NEW: uses GET /users/:id
+  fetchProfile: async (userId: number, silent = false) => {
+    try {
+      if (!silent) set({ isLoading: true, error: null });
+      const response = await apiClient.get(`/users/${userId}`);
+      const data = response.data as Profile;
+
+      if (data.is_active === false || data.is_blacklist === true) {
+        await get().signOut();
+        return;
+      }
+
+      set({
+        profile: data,
+        role: data.role,
+        isLoading: false,
+      });
+    } catch (error: any) {
+      set({ isLoading: false, error: error?.message || "Unknown error" });
+    }
+  },
+
+  // OLD: signOut() called supabase.auth.signOut() + unsubscribeFromProfile()
+  // NEW: calls backend POST /auth/logout + clears local tokens
+  signOut: async () => {
+    try {
+      await apiClient.post("/auth/logout").catch(() => null);
+    } finally {
+      set({ session: null, user: null, profile: null, role: null, isLoading: false });
+      await removeFromStorage();
+      await tokenManager.clearTokens();
+    }
+  },
+
+  // Stub — old Supabase realtime subscription, no longer needed
+  unsubscribeFromProfile: () => {},
+
+  isProfileComplete: () => {
+    const { profile } = get();
+    if (!profile) return false;
+    return !!(
+      profile.full_name?.trim() &&
+      profile.nrc?.trim() &&
+      profile.gender &&
+      profile.postal_code?.trim()
+    );
+  },
+}));
+
+// ================================================================
+// OLD: Supabase Auth — onAuthStateChange listener (kept for ref)
+// ================================================================
+// supabase.auth.onAuthStateChange(async (event, session) => {
+//   const { isVerifying, isInitialized, setSession } = useAuthStore.getState();
+//   if (isVerifying) return;
+//   if (event === "INITIAL_SESSION") return;
+//   if (event === "TOKEN_REFRESHED" && session) {
+//     useAuthStore.setState({ session, user: session.user });
+//     return;
+//   }
+//   if (!isInitialized) return;
+//   setSession(session);
+// });
+//
+// AppState.addEventListener("change", async (nextState: AppStateStatus) => {
+//   if (nextState !== "active") return;
+//   try {
+//     const store = useAuthStore.getState();
+//     if (!store.isInitialized) return;
+//     const { data, error: sessionError } = await supabase.auth.getSession();
+//     if (sessionError) { await store.signOut(); return; }
+//     if (data.session && !store.session) { await store.setSession(data.session); return; }
+//     if (!data.session && store.session) {
+//       const refreshToken = store.session?.refresh_token;
+//       if (!refreshToken) { await store.signOut(); return; }
+//       const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+//       if (refreshError) { await store.signOut(); return; }
+//       if (refreshed.session) { await store.setSession(refreshed.session); }
+//       else { await store.setSession(null); }
+//     }
+//   } catch (error) {
+//     await useAuthStore.getState().signOut();
+//   }
+// });
+
+// ================================================================
+// OLD: Full Supabase Auth Store implementation (kept for reference)
+// ================================================================
+// import { supabase } from "@/lib/supabase";
+// import { RealtimeChannel, Session, User } from "@supabase/supabase-js";
+// import { decode } from "base-64";
+// import { AppState, AppStateStatus } from "react-native";
+// import { create } from "zustand";
+//
+// export interface Profile {
+//   id: string;
+//   full_name: string | null;
+//   phone: string | null;
+//   role: "renter" | "car_owner" | "admin" | null;
+//   avatar_url: string | null;
+//   nrc: string | null;
+//   nrc_url: string | null;
+//   gender: string | null;
+//   postal_code: string | null;
+//   location: string | null;
+//   is_active: boolean;
+//   is_blacklist: boolean;
+//   created_at: string;
+// }
+//
+// interface AuthState {
+//   session: Session | null;
+//   user: User | null;
+//   profile: Profile | null;
+//   setProfile: (profile: Profile | null) => void;
+//   role: "renter" | "car_owner" | "admin" | null;
+//   isLoading: boolean;
+//   isInitialized: boolean;
+//   isVerifying: boolean;
+//   avatarUri: string | null;
+//   avatarBase64: string | null;
+//   profileSubscription: RealtimeChannel | null;
+//   error: string | null;
+//   initialize: () => Promise<void>;
+//   setSession: (session: Session | null) => Promise<void>;
+//   fetchProfile: (userId: string, silent?: boolean) => Promise<void>;
+//   signOut: () => Promise<void>;
+//   setIsVerifying: (val: boolean) => void;
+//   isProfileComplete: () => boolean;
+//   setAvatarUri: (uri: string | null, base64?: string | null) => void;
+//   uploadAvatar: (uri: string, userId: string, base64?: string | null) => Promise<string | null>;
+//   subscribeToProfile: (userId: string) => void;
+//   unsubscribeFromProfile: () => void;
+// }
+//
+// export const useAuthStore = create<AuthState>((set, get) => {
+//   const syncMetadataToProfile = async (userId: string, profileData: any, metadata: any) => {
+//     if (!metadata) return profileData;
+//     const updates: any = {};
+//     const fieldsToSync = ["avatar_url", "nrc", "gender", "postal_code", "location", "phone"];
+//     fieldsToSync.forEach((field) => {
+//       if (!profileData[field] && metadata[field]) {
+//         updates[field] = metadata[field];
+//         profileData[field] = metadata[field];
+//       }
+//     });
+//     if (Object.keys(updates).length > 0) {
+//       const { error } = await supabase.from("profiles").update(updates).eq("id", userId);
+//       if (error) throw error;
+//     }
+//     return profileData;
+//   };
+//
+//   return {
+//     session: null, user: null, profile: null, role: null,
+//     isLoading: true, isInitialized: false, isVerifying: false,
+//     avatarUri: null, avatarBase64: null, profileSubscription: null, error: null,
+//
+//     initialize: async () => {
+//       if (get().isInitialized) return;
+//       try {
+//         set({ isLoading: true, error: null });
+//         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+//         if (sessionError) throw sessionError;
+//         await get().setSession(session);
+//       } catch (error: any) {
+//         set({ isLoading: false, error: error?.message || "Unable to restore session" });
+//       } finally { set({ isInitialized: true }); }
+//     },
+//
+//     setIsVerifying: (isVerifying: boolean) => set({ isVerifying }),
+//     setAvatarUri: (avatarUri: string | null, avatarBase64: string | null = null) => set({ avatarUri, avatarBase64 }),
+//
+//     setSession: async (session: Session | null) => {
+//       try {
+//         const currentSession = get().session;
+//         if (currentSession?.access_token === session?.access_token && !!session && !!get().profile) {
+//           set({ session, user: session.user, isLoading: false, error: null });
+//           if (session.user.id) get().subscribeToProfile(session.user.id);
+//           return;
+//         }
+//         if (!session) {
+//           get().unsubscribeFromProfile();
+//           set({ session: null, user: null, profile: null, role: null, isLoading: false });
+//           return;
+//         }
+//         set({ session, user: session.user, isLoading: true });
+//         await get().fetchProfile(session.user.id);
+//         get().subscribeToProfile(session.user.id);
+//       } catch { set({ isLoading: false }); }
+//     },
+//
+//     setProfile: (profile) => set((state) => {
+//       if (JSON.stringify(state.profile) === JSON.stringify(profile)) return state;
+//       return { profile, role: profile?.role || null };
+//     }),
+//
+//     fetchProfile: async (userId: string, silent = false) => {
+//       try {
+//         if (!silent) set({ isLoading: true, error: null });
+//         const { data, error } = await Promise.race([
+//           supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+//           new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 30000)),
+//         ]);
+//         if (error) throw error;
+//         if (data) {
+//           if (data.is_active === false || data.is_blacklist === true) { await get().signOut(); return; }
+//           const metadata = get().session?.user?.user_metadata;
+//           const syncedData = await syncMetadataToProfile(userId, data, metadata);
+//           set({ profile: syncedData as Profile, role: syncedData.role as "renter" | "car_owner" | "admin", isLoading: false });
+//         } else { set({ profile: null, role: null, isLoading: false }); }
+//       } catch (error: any) { set({ isLoading: false, error: error.message || "Unknown error" }); }
+//     },
+//
+//     signOut: async () => {
+//       try { get().unsubscribeFromProfile(); await supabase.auth.signOut(); }
+//       finally { set({ session: null, user: null, profile: null, role: null, isLoading: false }); }
+//     },
+//
+//     uploadAvatar: async (uri: string, userId: string, base64?: string | null) => {
+//       try {
+//         const fileExt = uri.split(".").pop()?.split("?")[0] || "jpg";
+//         const fileName = `${userId}.${fileExt}`;
+//         let body: any;
+//         const finalBase64 = base64 || get().avatarBase64;
+//         if (finalBase64) {
+//           const binary = decode(finalBase64);
+//           const bytes = new Uint8Array(binary.length);
+//           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+//           body = bytes;
+//         } else { const response = await fetch(uri); body = await response.blob(); }
+//         const { error: uploadError } = await supabase.storage.from("profiles").upload(fileName, body, {
+//           contentType: `image/${fileExt === "jpg" ? "jpeg" : fileExt}`, upsert: true,
+//         });
+//         if (uploadError) throw uploadError;
+//         const { data: { publicUrl } } = supabase.storage.from("profiles").getPublicUrl(fileName);
+//         return publicUrl;
+//       } catch { return null; }
+//     },
+//
+//     isProfileComplete: () => {
+//       const { profile } = get();
+//       if (!profile) return false;
+//       return !!(profile.full_name?.trim() && profile.nrc?.trim() && profile.gender && profile.postal_code?.trim());
+//     },
+//
+//     subscribeToProfile: (userId: string) => {
+//       if (get().profileSubscription) return;
+//       const channel = supabase.channel(`profile-updates-${userId}`)
+//         .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
+//           (payload) => {
+//             const newProfile = payload.new as Profile;
+//             if (newProfile.is_active === false || newProfile.is_blacklist === true) { get().signOut(); }
+//             else { set({ profile: newProfile, role: newProfile.role as "renter" | "car_owner" | "admin" }); }
+//           })
+//         .subscribe();
+//       set({ profileSubscription: channel });
+//     },
+//
+//     unsubscribeFromProfile: () => {
+//       const { profileSubscription } = get();
+//       if (profileSubscription) { supabase.removeChannel(profileSubscription); set({ profileSubscription: null }); }
+//     },
+//   };
+// });

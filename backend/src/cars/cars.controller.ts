@@ -15,7 +15,7 @@ export class CarsController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN) // Tag it is Admin-only
+  @Roles(Role.admin)
   create(@Body() createCarDto: CreateCarDto) {
     return this.carsService.create(createCarDto);
   }
@@ -32,14 +32,14 @@ export class CarsController {
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.admin)
   update(@Param('id') id: string, @Body() updateCarDto: UpdateCarDto) {
     return this.carsService.update(+id, updateCarDto);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.admin)
   remove(@Param('id') id: string) {
     return this.carsService.remove(+id);
   }
