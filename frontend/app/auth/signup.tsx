@@ -356,7 +356,7 @@ export default function Signup() {
       setStatusModal({
         visible: true,
         title: "Success",
-        message: "Account created! Please sign in.",
+        message: "Account created! Check your email for the 6-digit code.",
         type: "success",
       });
     } catch (error: any) {
@@ -925,7 +925,7 @@ export default function Signup() {
               onPress: () => {
                 if (statusModal.type === "success") {
                   router.push({
-                    pathname: "/auth/login",
+                    pathname: "/auth/verify",
                     params: { email: form.email },
                   });
                 }

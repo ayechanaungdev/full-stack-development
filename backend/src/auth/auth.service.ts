@@ -1,9 +1,12 @@
-import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 /**
  * Auth Service
@@ -15,6 +18,7 @@ export class AuthService {
         private usersService: UsersService,
         private jwtService: JwtService,
         private prisma: PrismaService,
+        private mailService: MailService,
     ) { }
 
     // Helper method to generate tokens
@@ -110,6 +114,53 @@ export class AuthService {
         await this.usersService.updateRefreshToken(user.id, tokens.refreshToken);
 
         return tokens;
+    }
+
+    // Generate and send a verification code
+    async sendVerificationCode(email: string, type: 'signup' | 'password_reset' = 'signup') {
+        // Check if there's a recent unused code (within last 60s) to prevent spam
+        const recent = await this.prisma.verificationToken.findFirst({
+            where: { email, type, usedAt: null, expiresAt: { gt: new Date() } },
+            orderBy: { createdAt: 'desc' },
+        });
+        if (recent) {
+            const elapsed = (Date.now() - recent.createdAt.getTime()) / 1000;
+            if (elapsed < 60) {
+                throw new BadRequestException('Please wait before requesting a new code.');
+            }
+        }
+
+        const code = crypto.randomInt(100000, 999999).toString();
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        await this.prisma.verificationToken.create({
+            data: { email, token: code, type, expiresAt },
+        });
+
+        await this.mailService.sendVerificationCode(email, code);
+
+        return { message: 'Verification code sent.', email };
+    }
+
+    // Verify an OTP code
+    async verifyOtp(verifyOtpDto: VerifyOtpDto) {
+        const { email, token } = verifyOtpDto;
+
+        const record = await this.prisma.verificationToken.findFirst({
+            where: { email, token, type: 'signup', usedAt: null, expiresAt: { gt: new Date() } },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        if (!record) {
+            throw new BadRequestException('Invalid or expired verification code.');
+        }
+
+        await this.prisma.verificationToken.update({
+            where: { id: record.id },
+            data: { usedAt: new Date() },
+        });
+
+        return { message: 'Email verified successfully.', email };
     }
 
     // New method: Logout (Deletes the refresh token from the DB)

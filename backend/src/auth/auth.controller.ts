@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { CreateUserDto } from 'src/users/dto/create-user.dto';
 import { UsersService } from 'src/users/users.service';
 import { JwtAuthGuard } from './jwt.guard';
@@ -29,7 +30,22 @@ export class AuthController {
 
   @Post('signup')
   async signup(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+    const user = await this.usersService.create(createUserDto);
+    // Auto-send verification email after signup
+    await this.authService.sendVerificationCode(createUserDto.email, 'signup').catch(() => null);
+    return user;
+  }
+
+  @Post('send-verification')
+  @HttpCode(HttpStatus.OK)
+  sendVerification(@Body('email') email: string) {
+    return this.authService.sendVerificationCode(email, 'signup');
+  }
+
+  @Post('verify-otp')
+  @HttpCode(HttpStatus.OK)
+  verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
+    return this.authService.verifyOtp(verifyOtpDto);
   }
 
   // 1. Refresh Route (Protected by the Second Bouncer!)

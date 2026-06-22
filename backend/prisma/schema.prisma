@@ -235,6 +235,18 @@ model DailyReport {
   createdAt       DateTime @default(now())
 }
 
+model VerificationToken {
+  id        Int       @id @default(autoincrement())
+  email     String
+  token     String
+  type      String    // "signup" | "password_reset"
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+}
+
 enum Role {
   renter
   car_owner
