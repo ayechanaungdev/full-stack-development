@@ -82,9 +82,11 @@ const AUTH_STORAGE_KEY = "backend_auth";
 
 const saveToStorage = async (data: object) => {
   try {
-    const { AsyncStorage } = await import("@react-native-async-storage/async-storage");
+    const { default: AsyncStorage } = await import("@react-native-async-storage/async-storage");
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
-  } catch {}
+  } catch (e) {
+    console.warn('[Auth] saveToStorage failed:', e);
+  }
 };
 
 const loadFromStorage = async (): Promise<{
@@ -127,6 +129,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ isLoading: true, error: null });
       const stored = await loadFromStorage();
       if (stored?.session && stored?.user) {
+        console.log('[Auth] Session restored from storage');
         set({
           session: stored.session,
           user: stored.user,
@@ -137,9 +140,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         await tokenManager.setTokens(stored.session.accessToken, stored.session.refreshToken);
       } else {
+        console.log('[Auth] No stored session found');
         set({ isLoading: false, isInitialized: true });
       }
     } catch (error: any) {
+      console.warn('[Auth] initialize error:', error?.message);
       set({ isLoading: false, error: error?.message || "Unable to restore session", isInitialized: true });
     }
   },
