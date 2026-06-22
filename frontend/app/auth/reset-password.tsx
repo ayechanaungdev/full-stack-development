@@ -1,3 +1,4 @@
+import apiClient from "@/lib/axios";
 import CustomAlert from "@/components/app-alert";
 import { Spinner } from "@/components/ui/spinner";
 import { useRouter } from "expo-router";
@@ -5,7 +6,6 @@ import { AlertCircle, Eye, EyeOff } from "lucide-react-native";
 import React, { useState } from "react";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
-// Supabase & Components
 import { Box } from "@/components/ui/box";
 import { Button, ButtonSpinner, ButtonText } from "@/components/ui/button";
 import {
@@ -21,14 +21,13 @@ import { HStack } from "@/components/ui/hstack";
 import { Input, InputField, InputIcon, InputSlot } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
 
 export default function ResetPassword() {
   const router = useRouter();
 
   const [formData, setFormData] = useState({
     email: "",
-    verificationCode: "", // Renamed from oldPasswordDigit for logic
+    verificationCode: "",
     newPassword: "",
     confirmPassword: "",
   });
@@ -48,7 +47,6 @@ export default function ResetPassword() {
     type: "success" as "success" | "error" | "info" | "warning",
   });
 
-  // Error State
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const displayErrors = (newErrors: { [key: string]: string }) => {
@@ -66,7 +64,7 @@ export default function ResetPassword() {
     }
   };
 
-  // --- Step 1: Send Recovery OTP ---
+  // --- Step 1: Send Reset Code ---
   const handleSendOTP = async () => {
     if (!formData.email) {
       displayErrors({ email: "Please enter your email address first." });
@@ -81,22 +79,10 @@ export default function ResetPassword() {
     try {
       setIsSendingCode(true);
 
-      const { data: emailExists, error: rpcError } = await supabase.rpc(
-        "check_email_exists",
-        { email_to_check: formData.email.trim().toLowerCase() },
-      );
-
-      if (!emailExists) {
-        displayErrors({ email: "No account found with this email." });
-        setIsSendingCode(false);
-        return;
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        formData.email.trim().toLowerCase(),
-      );
-
-      if (error) throw error;
+      await apiClient.post("/auth/send-verification", {
+        email: formData.email.trim().toLowerCase(),
+        type: "password_reset",
+      });
 
       setCodeSent(true);
       setStatusModal({
@@ -106,18 +92,17 @@ export default function ResetPassword() {
         type: "success",
       });
     } catch (error: any) {
-      const msg = error.message?.toLowerCase() || "";
-      if (msg.includes("email")) {
-        displayErrors({ email: error.message });
-      } else {
-        displayErrors({ email: error.message || "Failed to send reset code." });
-      }
+      const message =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to send reset code.";
+      displayErrors({ email: message });
     } finally {
       setIsSendingCode(false);
     }
   };
 
-  // --- Step 2 & 3: Verify OTP & Update Password ---
+  // --- Step 2: Verify OTP & Update Password ---
   const handleResetPassword = async () => {
     const { email, verificationCode, newPassword, confirmPassword } = formData;
     const newErrs: any = {};
@@ -162,41 +147,31 @@ export default function ResetPassword() {
     try {
       setLoading(true);
 
-      // 1. Verify OTP (This handles the 'Identity Check' you requested)
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      await apiClient.post("/auth/reset-password", {
         email: email.trim().toLowerCase(),
         token: verificationCode.trim(),
-        type: "recovery",
+        newPassword,
       });
 
-      if (verifyError) throw verifyError;
-
-      // 2. Update Password (since verifyOtp logs the user in temporarily)
-      if (data?.session) {
-        const { error: updateError } = await supabase.auth.updateUser({
-          password: newPassword,
-        });
-
-        if (updateError) throw updateError;
-
-        // 3. Sign out to force re-login with new password
-        await supabase.auth.signOut();
-
-        setStatusModal({
-          visible: true,
-          title: "Success!",
-          message: "Your password has been reset successfully.",
-          type: "success",
-        });
-      }
+      setStatusModal({
+        visible: true,
+        title: "Success!",
+        message: "Your password has been reset successfully.",
+        type: "success",
+      });
     } catch (error: any) {
-      const msg = error.message?.toLowerCase() || "";
-      if (msg.includes("email")) {
-        displayErrors({ email: error.message });
+      const rawMessage =
+        error.response?.data?.message ||
+        error.message ||
+        "Invalid or expired code.";
+      const message = Array.isArray(rawMessage)
+        ? rawMessage.join(", ")
+        : String(rawMessage);
+
+      if (message.toLowerCase().includes("email")) {
+        displayErrors({ email: message });
       } else {
-        displayErrors({
-          verificationCode: error.message || "Invalid or expired code.",
-        });
+        displayErrors({ verificationCode: message });
       }
     } finally {
       setLoading(false);
@@ -214,7 +189,6 @@ export default function ResetPassword() {
         showsVerticalScrollIndicator={false}
       >
         <Box className="px-8 pb-32 flex-1 justify-center">
-          {/* Header */}
           <Heading
             size="2xl"
             className="text-brand-700 text-center mb-12 font-bold"
@@ -264,9 +238,7 @@ export default function ResetPassword() {
               {errors.email && (
                 <FormControlError>
                   <FormControlErrorIcon as={AlertCircle} />
-                  <FormControlErrorText>
-                    {errors.email}
-                  </FormControlErrorText>
+                  <FormControlErrorText>{errors.email}</FormControlErrorText>
                 </FormControlError>
               )}
             </FormControl>
@@ -437,7 +409,6 @@ export default function ResetPassword() {
         </Box>
       </KeyboardAwareScrollView>
 
-      {/* Premium Status Modal */}
       <CustomAlert
         visible={statusModal.visible}
         onClose={() => setStatusModal((prev) => ({ ...prev, visible: false }))}

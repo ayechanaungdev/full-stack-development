@@ -1,4 +1,4 @@
-import { IsEmail, IsString, Length } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length } from 'class-validator';
 
 export class VerifyOtpDto {
   @IsEmail()
@@ -7,4 +7,8 @@ export class VerifyOtpDto {
   @IsString()
   @Length(6, 6, { message: 'Verification code must be exactly 6 digits' })
   token: string;
+
+  @IsString()
+  @IsOptional()
+  type?: 'signup' | 'password_reset';
 }

@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import * as bcrypt from 'bcrypt';
@@ -118,6 +119,14 @@ export class AuthService {
 
     // Generate and send a verification code
     async sendVerificationCode(email: string, type: 'signup' | 'password_reset' = 'signup') {
+        // For password reset, verify the user exists first
+        if (type === 'password_reset') {
+            const user = await this.prisma.user.findUnique({ where: { email } });
+            if (!user) {
+                throw new NotFoundException('No account found with this email.');
+            }
+        }
+
         // Check if there's a recent unused code (within last 60s) to prevent spam
         const recent = await this.prisma.verificationToken.findFirst({
             where: { email, type, usedAt: null, expiresAt: { gt: new Date() } },
@@ -137,17 +146,22 @@ export class AuthService {
             data: { email, token: code, type, expiresAt },
         });
 
-        await this.mailService.sendVerificationCode(email, code);
+        if (type === 'password_reset') {
+            await this.mailService.sendPasswordResetCode(email, code);
+        } else {
+            await this.mailService.sendVerificationCode(email, code);
+        }
 
         return { message: 'Verification code sent.', email };
     }
 
     // Verify an OTP code
     async verifyOtp(verifyOtpDto: VerifyOtpDto) {
-        const { email, token } = verifyOtpDto;
+        const { email, token, type } = verifyOtpDto;
+        const otpType = type || 'signup';
 
         const record = await this.prisma.verificationToken.findFirst({
-            where: { email, token, type: 'signup', usedAt: null, expiresAt: { gt: new Date() } },
+            where: { email, token, type: otpType, usedAt: null, expiresAt: { gt: new Date() } },
             orderBy: { createdAt: 'desc' },
         });
 
@@ -161,6 +175,40 @@ export class AuthService {
         });
 
         return { message: 'Email verified successfully.', email };
+    }
+
+    // Reset password using a verified OTP
+    async resetPassword(resetPasswordDto: ResetPasswordDto) {
+        const { email, token, newPassword } = resetPasswordDto;
+
+        const record = await this.prisma.verificationToken.findFirst({
+            where: { email, token, type: 'password_reset', usedAt: null, expiresAt: { gt: new Date() } },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        if (!record) {
+            throw new BadRequestException('Invalid or expired reset code.');
+        }
+
+        const user = await this.prisma.user.findUnique({ where: { email } });
+        if (!user) {
+            throw new NotFoundException('User not found.');
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        await this.prisma.$transaction([
+            this.prisma.verificationToken.update({
+                where: { id: record.id },
+                data: { usedAt: new Date() },
+            }),
+            this.prisma.user.update({
+                where: { id: user.id },
+                data: { password: hashedPassword },
+            }),
+        ]);
+
+        return { message: 'Password reset successfully.', email };
     }
 
     // New method: Logout (Deletes the refresh token from the DB)
