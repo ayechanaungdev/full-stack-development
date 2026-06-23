@@ -101,4 +101,152 @@ export class BookingsService {
     async findActiveBookings() {
         return this.bookingsRepository.findActiveBookings();
     }
+
+    async getOwnerDashboard(ownerId: number) {
+        const now = new Date();
+        const localYear = now.getFullYear();
+        const localMonth = now.getMonth();
+        const localDay = now.getDate();
+        const startOfYear = new Date(localYear, 0, 1);
+
+        const lastMonthYear = localMonth === 0 ? localYear - 1 : localYear;
+        const lastMonthIndex = localMonth === 0 ? 11 : localMonth - 1;
+
+        // Fetch completed bookings for owner's cars
+        const bookings = await this.bookingsRepository['prisma'].booking.findMany({
+            where: {
+                car: { ownerId },
+                status: 'COMPLETED',
+                endDate: { gte: startOfYear },
+            },
+            select: {
+                totalPrice: true,
+                endDate: true,
+            },
+        });
+
+        // Compute earnings
+        const earnings = bookings.reduce(
+            (acc, b) => {
+                const bookingTotal = Number(b.totalPrice) || 0;
+                const bDate = new Date(b.endDate);
+                const bYear = bDate.getFullYear();
+                const bMonth = bDate.getMonth();
+                const bDay = bDate.getDate();
+
+                acc.total += bookingTotal;
+                acc.thisYear += bookingTotal;
+                if (bYear === localYear && bMonth === localMonth && bDay === localDay)
+                    acc.today += bookingTotal;
+                if (bYear === localYear && bMonth === localMonth)
+                    acc.thisMonth += bookingTotal;
+                if (bYear === lastMonthYear && bMonth === lastMonthIndex)
+                    acc.lastMonth += bookingTotal;
+
+                return acc;
+            },
+            { total: 0, today: 0, thisMonth: 0, lastMonth: 0, thisYear: 0 },
+        );
+
+        // Fetch counts for Business Overview
+        const carCount = await this.bookingsRepository['prisma'].car.count({
+            where: { ownerId },
+        });
+
+        const activeCount = await this.bookingsRepository['prisma'].booking.count({
+            where: {
+                car: { ownerId },
+                status: 'APPROVED',
+            },
+        });
+
+        const driverCount = await this.bookingsRepository['prisma'].driver.count({
+            where: { ownerId },
+        });
+
+        const overview = {
+            cars: carCount || 0,
+            activeRentals: activeCount || 0,
+            drivers: driverCount || 0,
+        };
+
+        // Fetch today's trips
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+
+        const todayTrips = await this.bookingsRepository['prisma'].booking.findMany({
+            where: {
+                car: { ownerId },
+                status: 'APPROVED',
+                startDate: { lte: todayEnd },
+                endDate: { gte: todayStart },
+            },
+            select: {
+                id: true,
+                pickupLocation: true,
+                status: true,
+                startDate: true,
+                endDate: true,
+                car: {
+                    select: {
+                        id: true,
+                        brand: true,
+                        model: true,
+                        ownerId: true,
+                        carImages: {
+                            select: {
+                                image_url: true,
+                            },
+                        },
+                    },
+                },
+                driver: {
+                    select: {
+                        name: true,
+                    },
+                },
+            },
+            orderBy: {
+                startDate: 'asc',
+            },
+        });
+
+        // Map today's trips to match frontend camelCase property expectations
+        const trips = todayTrips.map(trip => ({
+            id: trip.id,
+            pickupLocation: trip.pickupLocation,
+            status: trip.status,
+            startDate: trip.startDate,
+            endDate: trip.endDate,
+            Car: {
+                id: trip.car.id,
+                brand: trip.car.brand,
+                model: trip.car.model,
+                ownerId: trip.car.ownerId,
+                CarImage: trip.car.carImages.map(img => ({
+                    image_url: img.image_url,
+                })),
+            },
+            Driver: trip.driver ? { name: trip.driver.name } : null,
+        }));
+
+        // Fetch fleet status
+        const cars = await this.bookingsRepository['prisma'].car.findMany({
+            where: { ownerId },
+            select: { status: true },
+        });
+
+        const availableCount = cars.filter(
+            (car) => car.status?.toLowerCase() === 'available',
+        ).length;
+
+        const fleet = {
+            available: availableCount,
+            unavailable: cars.length - availableCount,
+        };
+
+        return { earnings, overview, trips, fleet };
+    }
 }

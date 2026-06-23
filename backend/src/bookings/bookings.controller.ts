@@ -24,6 +24,11 @@ export class BookingsController {
         });
     }
 
+    @Get('owner-dashboard')
+    getOwnerDashboard(@Request() req: any) {
+        return this.bookingsService.getOwnerDashboard(req.user.userId);
+    }
+
     @Get()
     findAll(@Request() req: any) {
         // Pass the authenticated user info to the service for role-based filtering

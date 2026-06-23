@@ -18,6 +18,7 @@ import { Input, InputField } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
 import YANGON_TOWNSHIPS from "@/constants/yangon-townships.json";
+import { apiClient } from "@/lib/axios";
 import { supabase } from "@/lib/supabase";
 import { Profile, useAuthStore } from "@/store/useAuthStore";
 import { decode as atob } from "base-64";
@@ -224,33 +225,24 @@ export const OwnerProfileEdit = ({ data }: { data: Profile }) => {
 
   const uploadImageToStorage = async (
     base64Str: string,
-    userId: string,
+    userId: number | string,
   ): Promise<string | null> => {
     try {
-      const fileName = `${userId}/${Date.now()}.jpg`;
-      // Convert base64 to binary
-      const binary = atob(base64Str);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
+      const mimeMatch = previewImage?.match(/^data:image\/(\w+);/);
+      const ext = mimeMatch ? mimeMatch[1] : 'jpg';
+      const fileName = `${userId}.${ext}`;
 
-      //Upload to supabase storage
-      const { error: uploadError } = await supabase.storage
-        .from("profiles")
-        .upload(fileName, bytes, {
-          contentType: "image/jpeg",
-          upsert: true,
-        });
+      const { data: uploadResult } = await apiClient.post<{ publicUrl: string }>(
+        "/uploads",
+        {
+          filename: fileName,
+          contentBase64: base64Str,
+          contentType: `image/${ext}`,
+          folder: "car_rental_app/profiles",
+        },
+      );
 
-      if (uploadError) throw uploadError;
-
-      // Get url
-      const { data: urlData } = supabase.storage
-        .from("profiles")
-        .getPublicUrl(fileName);
-
-      return urlData.publicUrl;
+      return uploadResult.publicUrl;
     } catch (error) {
       console.error("Upload error:", error);
       return null;
@@ -285,13 +277,12 @@ export const OwnerProfileEdit = ({ data }: { data: Profile }) => {
       setIsSaving(true);
       const pastPhone = data.phone ?? "";
       if (phone.trim() && phone.trim() !== pastPhone) {
-        const { data: existingUser, error: checkError } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("phone", phone.trim())
-          .neq("id", data.id)
+        const { data: phoneCheck } = await apiClient.get<{ exists: boolean }>(
+          `/users/check-phone/${encodeURIComponent(phone.trim())}`,
+          { params: { excludeId: data.id } },
+        );
 
-        if (existingUser && existingUser.length > 0) {
+        if (phoneCheck?.exists) {
           setErrors((prev) => ({ ...prev, phone: "The phone number is already used" }));
           phoneRef.current?.focus();
           setIsSaving(false);
@@ -315,6 +306,7 @@ export const OwnerProfileEdit = ({ data }: { data: Profile }) => {
           finalAvatarUrl = uploadedUrl;
         } else {
           alert("Failed to upload image");
+          setIsSaving(false);
           return;
         }
       }
@@ -327,12 +319,7 @@ export const OwnerProfileEdit = ({ data }: { data: Profile }) => {
         location: address.trim() || null,
       };
 
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update(updatedFields)
-        .eq("id", data.id);
-
-      if (updateError) throw updateError;
+      await apiClient.patch(`/users/${data.id}`, updatedFields);
       setGloablProfile({ ...data, ...updatedFields });
       setIsSuccess(true);
       router.dismissAll();
@@ -345,6 +332,7 @@ export const OwnerProfileEdit = ({ data }: { data: Profile }) => {
       });
     } catch (error: any) {
       setIsSaving(false);
+      console.error("[OwnerProfileSave] Error:", error?.response?.status, error?.response?.data?.message || error?.message);
       router.dismissAll();
       router.replace({
         pathname: "/(protected)/(home)/profile",
