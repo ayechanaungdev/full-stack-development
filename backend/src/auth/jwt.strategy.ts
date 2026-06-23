@@ -1,9 +1,11 @@
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+    private readonly logger = new Logger(JwtStrategy.name);
+
     constructor() {
         super({
             // 1. Tell it where to look for the token (the Authorization Header)
@@ -18,6 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // 3. If the token is valid, this method runs.
     // The 'payload' is the decoded data we put in the token during login (sub, email, role).
     async validate(payload: any) {
+        this.logger.log(`JWT validated for user ${payload.sub} (${payload.email})`);
         // This attaches { userId, email, role } to the request object (req.user)
         return { userId: payload.sub, email: payload.email, role: payload.role };
     }

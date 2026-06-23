@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { CarsService } from './cars.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
+import { QueryCarDto } from './dto/query-car.dto';
 
 import { UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -21,8 +22,13 @@ export class CarsController {
   }
 
   @Get()
-  findAll() {
-    return this.carsService.findAll();
+  findAll(@Query() query: QueryCarDto) {
+    return this.carsService.findAllPaginated(query);
+  }
+
+  @Get('price-range')
+  getPriceRange() {
+    return this.carsService.getPriceRange();
   }
 
   @Get(':id')

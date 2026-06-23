@@ -6,15 +6,26 @@ export interface ApiError {
   details?: unknown;
 }
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+import config from "./config";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || config.API_BASE_URL;
 
 const jsonHeaders = {
   "Content-Type": "application/json",
 };
 
-const buildUrl = (path: string) => {
+const buildUrl = (path: string, params?: Record<string, any>) => {
   const trimmed = path.startsWith("/") ? path : `/${path}`;
-  return `${API_BASE_URL}${trimmed}`;
+  let url = `${API_BASE_URL}${trimmed}`;
+  if (params) {
+    const parts: string[] = [];
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+      }
+    });
+    if (parts.length > 0) url += `?${parts.join("&")}`;
+  }
+  return url;
 };
 
 const parseError = async (response: Response): Promise<ApiError> => {
@@ -39,8 +50,9 @@ const request = async <T>(
   path: string,
   options: RequestInit = {},
   token?: string,
+  params?: Record<string, any>,
 ): Promise<T> => {
-  const url = buildUrl(path);
+  const url = buildUrl(path, params);
   const headers: Record<string, string> = {
     ...jsonHeaders,
     ...(options.headers as Record<string, string>),
@@ -68,8 +80,8 @@ const request = async <T>(
 };
 
 export const api = {
-  get: <T>(path: string, token?: string) =>
-    request<T>(path, { method: "GET" }, token),
+  get: <T>(path: string, token?: string, params?: Record<string, any>) =>
+    request<T>(path, { method: "GET" }, token, params),
   post: <T>(path: string, body: ApiPayload, token?: string) =>
     request<T>(
       path,

@@ -1,5 +1,5 @@
 import { CarListItem } from "@/app/(protected)/(home)/search";
-import { supabase } from "@/lib/supabase";
+import { carService } from "@/lib/serviceAdapters";
 import { useCallback, useEffect, useState } from "react";
 
 type UseExploreCarsReturn = {
@@ -20,7 +20,7 @@ type UseExploreCarsReturn = {
 
 const LIMIT = 10;
 
-const roundUpToNicePrice = (value: number, step = 1000000) => {
+const roundUpToNicePrice = (value: number, step = 50000) => {
   if (!value || value <= 0) return 0;
   return Math.ceil(value / step) * step;
 };
@@ -35,19 +35,28 @@ export const formatCarRatings = (cars: any[]): CarListItem[] => {
         : 0;
 
     return {
-      ...car,
+      id: String(car.id),
+      brand: car.brand,
+      model: car.model,
+      price_per_day: car.pricePerDay ?? car.price_per_day,
+      postal_code: car.postal_code,
+      location: car.location ?? "",
+      status: car.status ?? "Available",
+      seats: car.seats ?? 0,
+      car_type: car.car_type ?? "",
+      car_images: car.carImages ?? car.car_images ?? [],
       avg_rating: avg,
       review_count: ratings.length,
+      car_number: car.car_number,
     };
   });
 };
 
-
 export const useSearchCars = (): UseExploreCarsReturn => {
-   const [totalCars, setTotalCars] = useState(0);
+  const [totalCars, setTotalCars] = useState(0);
   const [cars, setCars] = useState<CarListItem[]>([]);
   const [allCars, setAllCars] = useState<CarListItem[]>([]);
- 
+
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
@@ -57,23 +66,11 @@ export const useSearchCars = (): UseExploreCarsReturn => {
   const [minPrice, setMinPrice] = useState(0);
   const [maxPrice, setMaxPrice] = useState(0);
 
-  const fetchTotalCars = useCallback(async () => {
-    const { count } = await supabase
-      .from("cars")
-      .select("*", {
-        count: "exact",
-        head: true,
-      })
-      .eq("status", "Available");
-
-    setTotalCars(count || 0);
-  }, []);
-
   const buildFilterOptions = useCallback((carsData: any[]) => {
     const typesMap = new Map<string, string>();
     const seatsSet = new Set<string>();
 
-    carsData.forEach((car) => {
+    carsData.forEach((car: any) => {
       if (car.seats) {
         seatsSet.add(`${car.seats} Seats`);
       }
@@ -101,57 +98,29 @@ export const useSearchCars = (): UseExploreCarsReturn => {
   }, []);
 
   const fetchFilterOptions = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("cars")
-      .select(
-        `
-        id, brand, model, price_per_day, seats, car_type,
-        location, status, car_number, postal_code,
-        car_images ( image_url ),
-        reviews ( rating )
-      `,
-      )
-      .eq("status", "Available");
-
-    if (error || !data) {
-      console.error(error);
-      return;
+    try {
+      const result = await carService.getCars({ limit: 200, status: "Available" });
+      const formatted = formatCarRatings(result.data ?? []);
+      buildFilterOptions(formatted);
+    } catch (err) {
+      console.error(err);
     }
-
-    const formatted = formatCarRatings(data);
-    buildFilterOptions(formatted);
   }, [buildFilterOptions]);
 
   const fetchCars = useCallback(async (currentOffset = 0, isLoadMore = false, usePagination = true) => {
     setLoading(true);
 
-    let query = supabase
-      .from("cars")
-      .select(
-        `
-        id, brand, model, price_per_day, seats, car_type,
-        location, status, car_number, postal_code,
-        car_images ( image_url ),
-        reviews ( rating )
-      `,
-      )
-      .eq("status", "Available")
-    
-    if (usePagination) {
-      query = query.range(currentOffset, currentOffset + LIMIT - 1);
-    }
-    
-    const { data, error } = await query;
-    setLoading(false);
-    if (error || !data) {
-      console.error(error);
-      return;
-    }
+    try {
+      const result = await carService.getCars({
+        page: usePagination ? Math.floor(currentOffset / LIMIT) : 0,
+        limit: usePagination ? LIMIT : 200,
+        status: "Available",
+      });
 
-    if (data) {
-      const formatted = formatCarRatings(data);
+      const formatted = formatCarRatings(result.data ?? []);
+
       if (isLoadMore) {
-       setCars((prev) => {
+        setCars((prev) => {
           const map = new Map(prev.map((car) => [car.id, car]));
           formatted.forEach((car) => {
             map.set(car.id, car);
@@ -173,34 +142,24 @@ export const useSearchCars = (): UseExploreCarsReturn => {
 
       setOffset(currentOffset + formatted.length);
       setHasMore(formatted.length === LIMIT);
-    }
 
-    setLoading(false);
+      if (!isLoadMore) {
+        setTotalCars(result.total ?? 0);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const fetchPriceRange = useCallback(async () => {
-    const [{ data: minData, error: minError }, { data: maxData, error: maxError }] = await Promise.all([
-      supabase
-        .from("cars")
-        .select("price_per_day")
-        .eq("status", "Available")
-        .order("price_per_day", { ascending: true })
-        .limit(1),
-      supabase
-        .from("cars")
-        .select("price_per_day")
-        .eq("status", "Available")
-        .order("price_per_day", { ascending: false })
-        .limit(1),
-    ]);
-
-    if (!minError) {
-      setMinPrice(minData?.[0]?.price_per_day ?? 0);
-    }
-
-    if (!maxError) {
-      const availableMax = maxData?.[0]?.price_per_day ?? 0;
-      setMaxPrice(roundUpToNicePrice(availableMax));
+    try {
+      const range = await carService.getPriceRange();
+      setMinPrice(range.min ?? 0);
+      setMaxPrice(roundUpToNicePrice(range.max ?? 0));
+    } catch (err) {
+      console.error(err);
     }
   }, []);
 
@@ -210,16 +169,14 @@ export const useSearchCars = (): UseExploreCarsReturn => {
       fetchFilterOptions(),
       fetchCars(0, false, true),
       fetchPriceRange(),
-      fetchTotalCars(),
     ]);
-  }, [fetchCars, fetchFilterOptions, fetchPriceRange, fetchTotalCars]);
+  }, [fetchCars, fetchFilterOptions, fetchPriceRange]);
 
   useEffect(() => {
     fetchFilterOptions();
     fetchCars(0, false);
     fetchPriceRange();
-    fetchTotalCars();
-  }, [fetchCars, fetchFilterOptions, fetchPriceRange, fetchTotalCars]);
+  }, [fetchCars, fetchFilterOptions, fetchPriceRange]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;
@@ -241,7 +198,6 @@ export const useSearchCars = (): UseExploreCarsReturn => {
     refetch,
     loadMore,
     loadingMore,
-    hasMore
+    hasMore,
   };
 };
-

@@ -130,6 +130,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const stored = await loadFromStorage();
       if (stored?.session && stored?.user) {
         console.log('[Auth] Session restored from storage');
+        await tokenManager.setTokens(stored.session.accessToken, stored.session.refreshToken);
         set({
           session: stored.session,
           user: stored.user,
@@ -138,7 +139,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isLoading: false,
           isInitialized: true,
         });
-        await tokenManager.setTokens(stored.session.accessToken, stored.session.refreshToken);
       } else {
         console.log('[Auth] No stored session found');
         set({ isLoading: false, isInitialized: true });
@@ -163,9 +163,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return;
     }
     if (user) {
+      await tokenManager.setTokens(session.accessToken, session.refreshToken);
       set({ session, user, profile: user, role: user.role, isLoading: false });
       await saveToStorage({ session, user });
-      await tokenManager.setTokens(session.accessToken, session.refreshToken);
     } else {
       set({ session, isLoading: false });
     }

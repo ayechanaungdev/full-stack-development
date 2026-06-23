@@ -1,5 +1,5 @@
 // src/cars/dto/create-car.dto.ts
-import { IsString, IsInt, IsNumber, Min, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsInt, IsNumber, Min, IsOptional } from 'class-validator';
 
 export class CreateCarDto {
     @IsString()
@@ -16,7 +16,4 @@ export class CreateCarDto {
     @Min(0) // Price cannot be negative!
     pricePerDay: number;
 
-    @IsOptional() // This field is not required when creating a car
-    @IsBoolean()
-    isAvailable?: boolean;
 }

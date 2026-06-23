@@ -90,13 +90,23 @@ export const bookingService = {
 };
 
 export const carService = {
-  getCars: () => api.get<any[]>("cars"),
+  getCars: (params?: Record<string, any>) =>
+    api.get<any>("cars", undefined, params),
   getCar: (id: string) => api.get<any>(`cars/${id}`),
+  getPriceRange: () => api.get<{ min: number; max: number }>("cars/price-range"),
   createCar: (body: any, token?: string) => api.post<any>("cars", body, token),
   updateCar: (id: string, body: any, token?: string) =>
     api.patch<any>(`cars/${id}`, body, token),
   deleteCar: (id: string, token?: string) =>
     api.delete<any>(`cars/${id}`, token),
+};
+
+export const wishlistService = {
+  getAll: (token?: string) => api.get<any[]>("wishlist", token),
+  add: (carId: string, token?: string) =>
+    api.post<{ id: number }>(`wishlist/${carId}`, null, token),
+  remove: (carId: string, token?: string) =>
+    api.delete<any>(`wishlist/${carId}`, token),
 };
 
 export const inquiryService = {
@@ -143,4 +153,5 @@ export default {
   carService,
   inquiryService,
   storageService,
+  wishlistService,
 };

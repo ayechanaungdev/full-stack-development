@@ -71,8 +71,6 @@ model Car {
   postal_code  String?
   location     String?
   description  String?
-  isAvailable  Boolean   @default(true)
-
   bookings     Booking[]
   carImages    CarImage[]
   reviews      Review[]

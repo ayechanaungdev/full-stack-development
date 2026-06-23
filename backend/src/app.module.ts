@@ -13,6 +13,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { CronModule } from './cron/cron.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DriversModule } from './drivers/drivers.module';
+import { WishlistModule } from './wishlist/wishlist.module';
 import { MailModule } from './mail/mail.module';
 
 @Module({
@@ -26,6 +27,7 @@ import { MailModule } from './mail/mail.module';
     FirebaseModule,
     UploadsModule,
     DriversModule,
+    WishlistModule,
     MailModule,
     InquiriesModule,
     ScheduleModule.forRoot(),

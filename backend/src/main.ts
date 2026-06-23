@@ -6,9 +6,13 @@ async function bootstrap() {
   // We use NestFactory to create an application instance using our Root Module
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors();
+
   // Activate global ValidationPipe
   app.useGlobalPipes(new ValidationPipe({
-    whitelist: true, // Strips away any extra properties not defined in the DTO
+    whitelist: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
   }));
 
   // Tell the server to listen on port 3000

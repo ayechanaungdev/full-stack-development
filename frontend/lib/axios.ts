@@ -6,6 +6,8 @@ const API_BASE_URL = config.API_BASE_URL;
 
 class ApiClient {
   private client: AxiosInstance;
+  private cachedAccessToken: string | null = null;
+  private cachedRefreshToken: string | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -23,9 +25,13 @@ class ApiClient {
     // Request interceptor - Add JWT token
     this.client.interceptors.request.use(
       async (config) => {
-        const token = await this.getToken();
+        const token = this.cachedAccessToken || await this.getToken();
         if (token) {
+          console.log(`[Axios] Attaching token (${token.substring(0, 10)}...${token.substring(token.length - 5)})`);
           config.headers.Authorization = `Bearer ${token}`;
+        } else {
+          console.warn('[Axios] No token available — skipping Authorization header');
+          console.warn(`[Axios] cachedAccessToken: ${!!this.cachedAccessToken}`);
         }
         return config;
       },
@@ -45,7 +51,7 @@ class ApiClient {
           originalRequest._retry = true;
 
           try {
-            const refreshToken = await this.getRefreshToken();
+            const refreshToken = this.cachedRefreshToken || await this.getRefreshToken();
             if (refreshToken) {
               // OLD: sent refresh token in body
               // const response = await this.client.post('/auth/refresh', { refreshToken });
@@ -99,6 +105,8 @@ class ApiClient {
 
   // NEW: public setTokens — saves both access + refresh
   public async setTokens(accessToken: string, refreshToken: string): Promise<void> {
+    this.cachedAccessToken = accessToken;
+    this.cachedRefreshToken = refreshToken;
     try {
       await AsyncStorage.multiSet([
         ['accessToken', accessToken],
@@ -111,6 +119,8 @@ class ApiClient {
 
   // NEW: public clearTokens — for store/axios interceptor use
   public async clearTokens(): Promise<void> {
+    this.cachedAccessToken = null;
+    this.cachedRefreshToken = null;
     try {
       await AsyncStorage.multiRemove(['accessToken', 'refreshToken']);
     } catch (error) {
