@@ -21,7 +21,7 @@ import { Textarea, TextareaInput } from "@/components/ui/textarea";
 import { VStack } from "@/components/ui/vstack";
 import carBrands from "@/constants/car-brands.json";
 import yangonTownships from "@/constants/yangon-townships.json";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
@@ -79,6 +79,7 @@ export default function AddNewCarScreen() {
   const [has_ac, setHasAc] = useState(true);
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [errors, setErrors] = useState<any>({});
@@ -145,12 +146,21 @@ export default function AddNewCarScreen() {
   useEffect(() => {
     if (!currentId) return;
     const fetchImages = async () => {
-      const { data } = await supabase
-        .from("car_images")
-        .select("*")
-        .eq("car_id", currentId)
-        .order("is_primary", { ascending: false });
-      if (data) setImages(data);
+      try {
+        const response = await apiClient.get(`/cars/${currentId}`);
+        const car = response.data;
+        if (car && car.carImages) {
+          setImages(
+            car.carImages.map((img: any) => ({
+              id: img.id,
+              image_url: img.image_url,
+              is_primary: img.is_primary ?? false,
+            })),
+          );
+        }
+      } catch (err) {
+        console.error("Error fetching car images:", err);
+      }
     };
     fetchImages();
   }, [currentId]);
@@ -242,73 +252,53 @@ export default function AddNewCarScreen() {
       });
     }
   };
-  const handleDeleteImage = async (img: any) => {
+  const handleDeleteImage = (img: any) => {
     // Keep track of whether we are deleting the primary image
     const wasPrimary = img.is_primary;
 
-    if (img.isLocal) {
-      setImages((prev) => {
-        // 1. Remove the deleted image
-        const filtered = prev.filter((i) => i.uri !== img.uri);
-
-        // 2. If we deleted the primary, make the next available image the primary
-        if (wasPrimary && filtered.length > 0) {
-          filtered[0].is_primary = true;
-        }
-        return filtered;
+    setImages((prev) => {
+      // 1. Remove the deleted image
+      const filtered = prev.filter((i) => {
+        if (img.isLocal) return i.uri !== img.uri;
+        return i.id !== img.id;
       });
-      return;
-    }
 
-    try {
-      const path = img.image_url.split("car-images/")[1];
-      await supabase.storage.from("car-images").remove([path]);
-      await supabase.from("car_images").delete().eq("id", img.id);
-
-      setImages((prev) => {
-        // 1. Remove the deleted database image
-        const filtered = prev.filter((i) => i.id !== img.id);
-
-        // 2. If we deleted the primary, make the next available image the primary
-        if (wasPrimary && filtered.length > 0) {
-          filtered[0].is_primary = true;
-        }
-        return filtered;
-      });
-    } catch (error: any) {
-      setAlert({
-        visible: true,
-        title: "Delete Failed",
-        message: "Could not delete the image. Please try again.",
-        type: "error",
-        actions: [{ text: "OK" }],
-      });
-    }
+      // 2. If we deleted the primary, make the next available image the primary
+      if (wasPrimary && filtered.length > 0) {
+        filtered[0].is_primary = true;
+      }
+      return filtered;
+    });
   };
-  const uploadPendingImages = async (carId: string) => {
-    const pending = images.filter((img) => img.isLocal);
+  const uploadLocalImages = async (carId: string) => {
+    const updatedImages = [...images];
 
-    for (const img of pending) {
-      const fileName = `${carId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${img.fileExt}`;
+    for (let i = 0; i < updatedImages.length; i++) {
+      const img = updatedImages[i];
+      if (img.isLocal) {
+        const ext = img.fileExt || "jpg";
+        const prefix = carId || user?.id || "new_car";
+        const fileName = `${prefix}_${Date.now()}_${i}.${ext}`;
 
-      const { error: storageError } = await supabase.storage
-        .from("car-images")
-        .upload(fileName, decode(img.base64), {
-          contentType: `image/${img.fileExt}`,
-        });
+        const { data: uploadResult } = await apiClient.post<{ publicUrl: string }>(
+          "/uploads",
+          {
+            filename: fileName,
+            contentBase64: img.base64,
+            contentType: `image/${ext}`,
+            folder: "car_rental_app/car_images",
+          },
+        );
 
-      if (storageError) throw storageError;
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("car-images").getPublicUrl(fileName);
-
-      await supabase
-        .from("car_images")
-        .insert([
-          { car_id: carId, image_url: publicUrl, is_primary: img.is_primary },
-        ]);
+        // Update the image object in our array
+        updatedImages[i] = {
+          image_url: uploadResult.publicUrl,
+          is_primary: img.is_primary ?? false,
+        };
+      }
     }
+
+    return updatedImages;
   };
 
   //empty form
@@ -423,7 +413,7 @@ export default function AddNewCarScreen() {
   ]);
 
   //  usePreventRemove replaces beforeRemove listener
-  usePreventRemove(!isFormEmpty() && !isSubmitting, ({ data }) => {
+  usePreventRemove(!isFormEmpty() && !isSubmitting && !isSuccess, ({ data }) => {
     setAlert({
       visible: true,
       title: "Discard changes?",
@@ -587,17 +577,24 @@ export default function AddNewCarScreen() {
         newErrors.car_number = "Format must be 1A-1234.";
       //Database Check for Duplicate (Only if no format error and it's a new car)
       if (!newErrors.car_number && !currentId) {
-        const { data: existingCar } = await supabase
-          .from("cars")
-          .select("car_number")
-          .eq("car_number", car_number.trim())
-          .maybeSingle();
+        try {
+          const response = await apiClient.get("/cars", {
+            params: { search: car_number.trim() }
+          });
+          const rawCars = response.data.data || [];
+          const isDuplicate = rawCars.some(
+            (c: any) => c.car_number?.toLowerCase() === car_number.trim().toLowerCase()
+          );
 
-        if (existingCar) {
-          newErrors.car_number =
-            "Duplicate license plate numbers are not allowed.";
+          if (isDuplicate) {
+            newErrors.car_number =
+              "Duplicate license plate numbers are not allowed.";
+          }
+        } catch (err) {
+          console.error("Error checking duplicate plate number:", err);
         }
       }
+
       // township and location Validations
       if (!form.township) newErrors.township = "Township is required.";
       if (!location.trim()) newErrors.location = "Location is required.";
@@ -620,55 +617,49 @@ export default function AddNewCarScreen() {
           return;
         }
       }
-      //  Get Current Owner (Required for both Insert and Update)
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-      if (userError || !user)
-        throw new Error("You must be logged in to add a car.");
 
-      //  Data Preparation ---
+      // Check current authenticated user session
+      if (!user) throw new Error("You must be logged in to add a car.");
+
+      // 1. Upload local images to Cloudinary first
+      const finalImages = await uploadLocalImages(currentId || "");
+
+      // 2. Prepare Data for API
       const finalBrand = isOtherBrand ? customBrand.trim() : brand.trim();
       const finalModel =
         isOtherBrand || isOtherModel ? customModel.trim() : model.trim();
+
       const carData = {
-        owner_id: user.id,
         brand: finalBrand,
         model: finalModel,
         car_type: car_type.trim(),
         seats: seatNum,
-        price_per_day: priceNum,
+        pricePerDay: priceNum, // backend expects camelCase pricePerDay
         postal_code: form.township,
         location: location.trim(),
         description: description.trim(),
         status: "Pending",
         has_ac,
         car_number: car_number.trim(),
+        images: finalImages.map((img) => ({
+          id: img.id,
+          image_url: img.image_url,
+          is_primary: img.is_primary ?? false,
+        })),
       };
 
       let activeId = currentId;
 
-      // Database Operations
+      // 3. Save/Update via API
       if (currentId) {
-        const { error } = await supabase
-          .from("cars")
-          .update(carData)
-          .eq("id", currentId);
-        if (error) throw error;
+        await apiClient.patch(`/cars/${currentId}`, carData);
       } else {
-        const { data, error } = await supabase
-          .from("cars")
-          .insert([carData])
-          .select()
-          .single();
-        if (error) throw error;
-        activeId = data.id;
-        setCurrentId(data.id);
+        const response = await apiClient.post("/cars", carData);
+        activeId = response.data.id;
+        setCurrentId(activeId);
       }
 
-      // Image Uploads & Success
-      await uploadPendingImages(activeId!);
+      setIsSuccess(true);
       setHasUnsavedChanges(false);
 
       // Invalidate React Query cache to automatically refetch cars list
@@ -678,16 +669,16 @@ export default function AddNewCarScreen() {
       setToastMessage("Car submitted successfully.");
       setToastType("success");
       setToastVisible(true);
-      resetForm();
       setTimeout(() => {
         router.back();
       }, 1200);
     } catch (error: any) {
-      // ETWORK ERROR INTERCEPTION
-      // Check if the error message contains "fetch" or "network"
+      // NETWORK ERROR INTERCEPTION
       if (
-        error.message.includes("fetch") ||
-        error.message.includes("Network request failed")
+        error.message &&
+        (error.message.includes("fetch") ||
+          error.message.includes("Network request failed") ||
+          error.message.includes("Network Error"))
       ) {
         setAlert({
           visible: true,
@@ -699,7 +690,7 @@ export default function AddNewCarScreen() {
         });
       } else {
         // Handle other validation or database errors
-        setToastMessage(error.message || "Something went wrong");
+        setToastMessage(error.response?.data?.message || error.message || "Something went wrong");
         setToastType("error");
         setToastVisible(true);
       }
@@ -774,9 +765,8 @@ export default function AddNewCarScreen() {
                   </Text>
 
                   <View
-                    className={`relative w-full h-48 rounded-2xl overflow-hidden mb-2 bg-transparent border ${
-                      errors.images ? "border-error-600 " : "border-outline-300"
-                    }`}
+                    className={`relative w-full h-48 rounded-2xl overflow-hidden mb-2 bg-transparent border ${errors.images ? "border-error-600 " : "border-outline-300"
+                      }`}
                   >
                     {images.find(
                       (i) => i.is_primary && (i.image_url || i.uri),
@@ -948,9 +938,8 @@ export default function AddNewCarScreen() {
                   className={`rounded-lg border h-12 flex-row justify-between items-center px-3 mb-1 ${errors.brand ? "border-error-600" : "border-outline-300"}`}
                 >
                   <Text
-                    className={`text-[13px] font-medium ${
-                      brand ? "text-typography-900" : "text-typography-400"
-                    }`}
+                    className={`text-[13px] font-medium ${brand ? "text-typography-900" : "text-typography-400"
+                      }`}
                   >
                     {brand || "Select Brand"}
                   </Text>
@@ -970,11 +959,10 @@ export default function AddNewCarScreen() {
                   <>
                     <Input
                       isDisabled={isSubmitting}
-                      className={`rounded-lg border-outline-300 data-[focus=true]:border-sky-500 h-12 bg-transparent w-full mt-2 mb-1 ${
-                        errors.customBrand
-                          ? "border-error-600"
-                          : "border-outline-300"
-                      }`}
+                      className={`rounded-lg border-outline-300 data-[focus=true]:border-sky-500 h-12 bg-transparent w-full mt-2 mb-1 ${errors.customBrand
+                        ? "border-error-600"
+                        : "border-outline-300"
+                        }`}
                     >
                       <InputField
                         ref={customBrandRef}
@@ -1021,14 +1009,12 @@ export default function AddNewCarScreen() {
                   <Pressable
                     disabled={isSubmitting}
                     onPress={() => (brand ? openModal("model") : null)}
-                    className={`rounded-lg border h-12 flex-row justify-between items-center px-3 mb-1 ${
-                      errors.model ? "border-error-600" : "border-outline-300"
-                    } ${!brand ? "opacity-50" : ""}`}
+                    className={`rounded-lg border h-12 flex-row justify-between items-center px-3 mb-1 ${errors.model ? "border-error-600" : "border-outline-300"
+                      } ${!brand ? "opacity-50" : ""}`}
                   >
                     <Text
-                      className={`text-[13px] font-medium ${
-                        model ? "text-typography-900" : "text-typography-400"
-                      }`}
+                      className={`text-[13px] font-medium ${model ? "text-typography-900" : "text-typography-400"
+                        }`}
                     >
                       {model || (brand ? "Select Model" : "Select Brand first")}
                     </Text>
@@ -1052,11 +1038,10 @@ export default function AddNewCarScreen() {
                   <>
                     <Input
                       isDisabled={isSubmitting}
-                      className={`rounded-lg border-outline-300 data-[focus=true]:border-sky-500 h-12 bg-transparent w-full mt-2 mb-1 ${
-                        errors.customModel
-                          ? "border-error-600"
-                          : "border-outline-300"
-                      }`}
+                      className={`rounded-lg border-outline-300 data-[focus=true]:border-sky-500 h-12 bg-transparent w-full mt-2 mb-1 ${errors.customModel
+                        ? "border-error-600"
+                        : "border-outline-300"
+                        }`}
                     >
                       <InputField
                         ref={customModelRef}

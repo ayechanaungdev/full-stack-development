@@ -1,6 +1,6 @@
 import EmptyState from "@/components/EmptyState";
 import { Divider } from "@/components/ui/divider";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
 import { brand } from "@/utils/dashboardHelpers";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -117,43 +117,28 @@ export default function OwnerCarsScreen() {
       }
 
       const page = Number(pageParam);
-      const from = page * CARS_PAGE_SIZE;
-      const to = from + CARS_PAGE_SIZE - 1;
 
-      let query = supabase
-        .from("cars")
-        .select(
-          `
-          id, brand, model, price_per_day, seats, car_type,car_number, status,
-          car_images!left(image_url)
-        `,
-          { count: "exact" },
-        )
-        .eq("owner_id", user.id);
+      const response = await apiClient.get('/cars', {
+        params: {
+          page,
+          limit: CARS_PAGE_SIZE,
+          ownerId: user.id,
+          search: debouncedSearch || undefined,
+        }
+      });
 
+      const { data: rawCars, total } = response.data;
 
-
-      const terms = getSearchTerms(debouncedSearch);
-      if (terms.length > 0) {
-        const searchStr = `%${debouncedSearch.trim()}%`;
-        query = query.or(`brand.ilike.${searchStr},model.ilike.${searchStr},car_number.ilike.${searchStr}`);
-      }
-
-      const { data, error, count } = await query
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (error) throw error;
-
-      const cars = (data || []).map((car: any) => ({
+      const cars = (rawCars || []).map((car: any) => ({
         ...car,
-        car_images: car.car_images || [],
+        car_images: car.carImages || [],
         status: car.status?.toLowerCase(),
+        price_per_day: car.pricePerDay,
       })) as Car[];
-      const totalCount = count ?? 0;
-      const nextPage = to + 1 < totalCount ? page + 1 : undefined;
 
-      return { cars, count: totalCount, nextPage };
+      const nextPage = (page + 1) * CARS_PAGE_SIZE < total ? page + 1 : undefined;
+
+      return { cars, count: total, nextPage };
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextPage,
@@ -194,21 +179,21 @@ export default function OwnerCarsScreen() {
     queryFn: async () => {
       if (!user?.id) return [];
 
-      const { data, error } = await supabase
-        .from("cars")
-        .select("brand")
-        .eq("owner_id", user.id)
-        .order("brand", { ascending: true });
+      const response = await apiClient.get('/cars', {
+        params: {
+          ownerId: user.id,
+          limit: 1000,
+        }
+      });
 
-      if (error) throw error;
-
-      return [...new Set((data || []).map((car) => car.brand))];
+      const rawCars = response.data.data || [];
+      return [...new Set(rawCars.map((car: any) => car.brand))];
     },
     enabled: !!user?.id,
   });
 
   const brands = useMemo(() => {
-    return ["All Cars", ...carBrands];
+    return ["All Cars", ...carBrands as string[]];
   }, [carBrands]);
 
   // if data fetch from supabase fails
