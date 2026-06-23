@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { CreateUserDto } from 'src/users/dto/create-user.dto';
@@ -27,6 +28,12 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  googleLogin(@Body() googleLoginDto: GoogleLoginDto) {
+    return this.authService.googleLogin(googleLoginDto);
   }
 
   @Post('signup')

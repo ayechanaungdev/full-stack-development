@@ -1,10 +1,6 @@
-// OLD: Supabase auth import (kept for reference)
-// import { supabase } from "@/lib/supabase";
-// import { makeRedirectUri } from "expo-auth-session";
-// import * as WebBrowser from "expo-web-browser";
-
 import { useAuthStore } from "@/store/useAuthStore";
 import { useFocusEffect } from "@react-navigation/native";
+import * as Google from "expo-auth-session/providers/google";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { CircleAlert, Eye, EyeOff } from "lucide-react-native";
@@ -38,6 +34,7 @@ import { Pressable } from "@/components/ui/pressable";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
 import { Keyboard } from "react-native";
+import apiClient from "@/lib/axios";
 
 export default function Login() {
   const router = useRouter();
@@ -67,6 +64,81 @@ export default function Login() {
   const [loginToastType, setLoginToastType] = useState<
     "success" | "error" | "info" | "warning"
   >("success");
+
+  // Google OAuth
+  const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+  const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || googleClientId;
+  const [googleRequest, googleResponse, googlePromptAsync] =
+    Google.useAuthRequest({
+      clientId: googleClientId,
+      androidClientId: googleAndroidClientId,
+      scopes: ["openid", "profile", "email"],
+      selectAccount: true,
+    });
+
+  // Log redirect URI for verification
+  useEffect(() => {
+    if (googleRequest?.redirectUri) {
+      console.log("[Google] redirectUri:", googleRequest.redirectUri);
+    }
+  }, [googleRequest?.redirectUri]);
+
+  // Handle Google OAuth response
+  useEffect(() => {
+    if (googleResponse?.type === "error") {
+      console.error("[Google] Auth error:", googleResponse.error);
+      const message =
+        googleResponse.params?.error_description ||
+        googleResponse.error?.message ||
+        "Google sign-in was cancelled or failed.";
+      setStatusModal({
+        visible: true,
+        title: "Google Sign-In Error",
+        message,
+        type: "error",
+      });
+      return;
+    }
+    if (googleResponse?.type !== "success") return;
+    const idToken = googleResponse.params.id_token;
+    if (!idToken) {
+      console.error("[Google] No id_token in response");
+      setStatusModal({
+        visible: true,
+        title: "Google Sign-In Error",
+        message: "Failed to retrieve identity token from Google.",
+        type: "error",
+      });
+      return;
+    }
+
+    const handleGoogleToken = async () => {
+      try {
+        setLoading(true);
+        const res = await apiClient.post("/auth/google", { idToken });
+        const { accessToken, refreshToken, user } = res.data;
+
+        const store = useAuthStore.getState();
+        await store.setSession({ accessToken, refreshToken }, user);
+        router.replace("/");
+      } catch (error: any) {
+        const message =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Google sign-in failed.";
+        setStatusModal({
+          visible: true,
+          title: "Authentication Error",
+          message,
+          type: "error",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    handleGoogleToken();
+  }, [googleResponse, router]);
 
   // Sync initialEmail if it changes (e.g. returning from signup)
   useEffect(() => {
@@ -234,48 +306,19 @@ export default function Login() {
     }
   };
 
-  // OLD: Supabase Google OAuth login (kept for reference)
-  // const handleGoogleLogin = useCallback(async () => {
-  //   try {
-  //     setLoading(true);
-  //     const redirectTo = makeRedirectUri({
-  //       scheme: "carrentalpractice",
-  //       path: "auth/callback",
-  //     });
-  //     const { data, error } = await supabase.auth.signInWithOAuth({
-  //       provider: "google",
-  //       options: {
-  //         redirectTo,
-  //         skipBrowserRedirect: true,
-  //         queryParams: { prompt: "select_account" },
-  //       },
-  //     });
-  //     if (error) throw error;
-  //     if (!data?.url) throw new Error("Could not initialize Google login.");
-  //     const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-  //     if (result.type === "success") {
-  //       const { access_token, refresh_token } = parseAuthSessionUrl(result.url);
-  //       if (access_token && refresh_token) {
-  //         const { error: sessionError } = await supabase.auth.setSession({ access_token, refresh_token });
-  //         if (sessionError) throw sessionError;
-  //         router.replace("/");
-  //       } else {
-  //         router.replace({ pathname: "/auth/callback", params: { url: encodeURIComponent(result.url) } });
-  //       }
-  //     }
-  //   } catch (error: any) {
-  //     setStatusModal({ visible: true, title: "Authentication Error", message: error.message || "Could not initialize Google login.", type: "error" });
-  //   } finally { setLoading(false); }
-  // }, [router]);
-  // NEW: Google login not available yet via backend
   const handleGoogleLogin = useCallback(async () => {
-    setStatusModal({
-      visible: true,
-      title: "Coming Soon",
-      message: "Google login is not available yet. Please use email and password to sign in.",
-      type: "info",
-    });
-  }, []);
+    if (!googleClientId || googleClientId.startsWith("your_")) {
+      setStatusModal({
+        visible: true,
+        title: "Configuration Needed",
+        message:
+          "Google Sign-In is not configured yet. Please set EXPO_PUBLIC_GOOGLE_CLIENT_ID in your .env file.",
+        type: "info",
+      });
+      return;
+    }
+    await googlePromptAsync();
+  }, [googleClientId, googlePromptAsync]);
 
   return (
     <SafeAreaView

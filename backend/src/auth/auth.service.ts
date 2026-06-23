@@ -1,13 +1,15 @@
-import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { LoginDto } from './dto/login.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 
 /**
  * Auth Service
@@ -15,12 +17,17 @@ import * as crypto from 'crypto';
  */
 @Injectable()
 export class AuthService {
+    private googleClient: OAuth2Client;
+
     constructor(
         private usersService: UsersService,
         private jwtService: JwtService,
         private prisma: PrismaService,
         private mailService: MailService,
-    ) { }
+    ) {
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        this.googleClient = new OAuth2Client(clientId);
+    }
 
     // Helper method to generate tokens
     async generateTokens(userId: number, email: string, role: string) {
@@ -49,10 +56,15 @@ export class AuthService {
             throw new UnauthorizedException('Invalid email or password');
         }
 
-        // 3. Compare the typed password with the scrambled hash in the DB
+        // 3. If user signed up via Google, they have no password
+        if (!user.password) {
+            throw new UnauthorizedException('This account uses Google Sign-In. Please sign in with Google.');
+        }
+
+        // 4. Compare the typed password with the scrambled hash in the DB
         const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
 
-        // 4. If wrong password, kick them out
+        // 5. If wrong password, kick them out
         if (!isPasswordValid) {
             throw new UnauthorizedException('Invalid email or password');
         }
@@ -215,6 +227,105 @@ export class AuthService {
     async logout(userId: number) {
         await this.usersService.removeRefreshToken(userId);
         return { message: 'Logged out successfully' };
+    }
+
+    async googleLogin(googleLoginDto: GoogleLoginDto) {
+        const { idToken } = googleLoginDto;
+
+        // 1. Verify the Google ID token
+        let payload: { email?: string; name?: string; sub?: string; picture?: string };
+        try {
+            const clientId = process.env.GOOGLE_CLIENT_ID;
+            const ticket = await this.googleClient.verifyIdToken({
+                idToken,
+                audience: clientId,
+            });
+            const result = ticket.getPayload();
+            if (!result) {
+                throw new UnauthorizedException('Invalid Google token.');
+            }
+            payload = result;
+        } catch (err: any) {
+            if (err instanceof UnauthorizedException) throw err;
+            throw new UnauthorizedException('Google token verification failed.');
+        }
+
+        const googleId = payload.sub;
+        const email = payload.email;
+        const name = payload.name || email?.split('@')[0] || 'User';
+
+        if (!googleId || !email) {
+            throw new BadRequestException('Google account missing required information.');
+        }
+
+        // 2. Find existing user by googleId, then by email
+        let user = await this.prisma.user.findUnique({
+            where: { googleId },
+            include: { profile: true },
+        });
+
+        if (!user) {
+            const existingByEmail = await this.prisma.user.findUnique({ where: { email } });
+
+            if (existingByEmail) {
+                // 3a. Link Google account to existing email user
+                user = await this.prisma.user.update({
+                    where: { id: existingByEmail.id },
+                    data: { googleId, provider: 'google' },
+                    include: { profile: true },
+                });
+            } else {
+                // 3b. Create new user from Google profile
+                const created = await this.prisma.user.create({
+                    data: {
+                        email,
+                        name,
+                        googleId,
+                        provider: 'google',
+                        password: null,
+                    },
+                });
+
+                await this.prisma.profile.create({
+                    data: {
+                        id: created.id,
+                        full_name: name,
+                        avatar_url: payload.picture || null,
+                    },
+                });
+
+                user = await this.prisma.user.findUnique({
+                    where: { id: created.id },
+                    include: { profile: true },
+                });
+            }
+        }
+
+        if (!user) {
+            throw new InternalServerErrorException('Failed to create or find user.');
+        }
+
+        // 4. Check if user is active
+        const userProfile = user.profile;
+        if (userProfile?.is_active === false || userProfile?.is_blacklist === true) {
+            throw new ForbiddenException('Account is deactivated or blacklisted.');
+        }
+
+        // 5. Generate tokens
+        const tokens = await this.generateTokens(user.id, user.email, user.role);
+
+        // 6. Save refresh token
+        await this.usersService.updateRefreshToken(user.id, tokens.refreshToken);
+
+        // 7. Flatten user data (same format as login response)
+        const { password, refreshToken, profile: userProfileData, ...userData } = user;
+        const { id: _pid, createdAt: _pca, updatedAt: _pua, ...profileData } = userProfileData || {};
+        const flattenedUser = { ...userData, ...profileData };
+
+        return {
+            ...tokens,
+            user: flattenedUser,
+        };
     }
 
 }
