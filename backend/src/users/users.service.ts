@@ -9,6 +9,10 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
+export interface CheckPhoneResult {
+    exists: boolean;
+}
+
 export type FlattenedUser = Record<string, any>;
 
 @Injectable()
@@ -179,6 +183,13 @@ export class UsersService {
             include: { profile: true },
         });
         return this.flatten(user);
+    }
+
+    async checkPhone(phone: string, excludeId?: number): Promise<CheckPhoneResult> {
+        const profile = await this.usersRepository.findByPhone(phone);
+        if (!profile) return { exists: false };
+        if (excludeId && profile.id === excludeId) return { exists: false };
+        return { exists: true };
     }
 
     async updateFcmToken(userId: number, fcmToken: string) {

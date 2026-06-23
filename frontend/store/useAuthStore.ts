@@ -30,8 +30,7 @@
 // ================================================================
 // NEW: Backend Auth Store (active)
 // ================================================================
-import { tokenManager } from "@/lib/axios";
-import apiClient from "@/lib/axios";
+import { tokenManager, apiClient } from "@/lib/axios";
 import { create } from "zustand";
 
 export interface Profile {
@@ -124,6 +123,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // OLD: initialize() used supabase.auth.getSession()
   // NEW: read tokens + user from AsyncStorage
   initialize: async () => {
+    if (!get().isInitialized) {
+      tokenManager.onAuthFailed(() => {
+        get().signOut();
+      });
+    }
     if (get().isInitialized) return;
     try {
       set({ isLoading: true, error: null });

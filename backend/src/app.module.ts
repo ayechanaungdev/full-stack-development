@@ -8,6 +8,7 @@ import { BookingsModule } from './bookings/bookings.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { InquiriesModule } from './inquiries/inquiries.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronModule } from './cron/cron.module';
@@ -25,6 +26,7 @@ import { MailModule } from './mail/mail.module';
     AuthModule,
     ChatModule,
     FirebaseModule,
+    CloudinaryModule,
     UploadsModule,
     DriversModule,
     WishlistModule,

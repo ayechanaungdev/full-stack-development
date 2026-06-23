@@ -73,4 +73,10 @@ export class UsersRepository extends BaseRepository<any> {
       include: { profile: true },
     });
   }
+
+  async findByPhone(phone: string): Promise<any | null> {
+    return this.prisma.profile.findUnique({
+      where: { phone },
+    });
+  }
 }

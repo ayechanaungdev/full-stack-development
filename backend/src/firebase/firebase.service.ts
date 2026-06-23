@@ -17,10 +17,12 @@ export class FirebaseService {
 
       // Firebase App ကို Initialize မလုပ်ရသေးရင် လုပ်ပါမယ်
       if (!admin.apps.length) {
+        const storageBucket = `${serviceAccount.project_id}.appspot.com`;
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
+          storageBucket,
         });
-        this.logger.log('Firebase Admin SDK initialized successfully. 🚀');
+        this.logger.log(`Firebase Admin SDK initialized successfully. 🚀 Bucket: ${storageBucket}`);
       }
     } catch (error) {
       this.logger.error('Failed to initialize Firebase Admin SDK ❌', error);
@@ -73,14 +75,19 @@ export class FirebaseService {
         resumable: false,
       });
 
-      // Make the file publicly readable and return the public URL
-      await file.makePublic();
+      // Try to make public, but don't fail if bucket uses uniform access
+      try {
+        await file.makePublic();
+      } catch (publicErr: any) {
+        this.logger.warn(`makePublic failed (bucket may use uniform access): ${publicErr?.message}`);
+      }
+
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
       this.logger.log(`Uploaded file to ${publicUrl}`);
       return { publicUrl };
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error('Error uploading file to Firebase Storage', error);
-      throw error;
+      throw new Error(`Firebase upload failed: ${error?.message}`);
     }
   }
 

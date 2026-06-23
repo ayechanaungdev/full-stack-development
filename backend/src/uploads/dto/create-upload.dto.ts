@@ -13,5 +13,5 @@ export class CreateUploadDto {
 
   @IsOptional()
   @IsString()
-  bucket?: string;
+  folder?: string;
 }

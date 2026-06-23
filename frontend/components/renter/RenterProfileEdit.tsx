@@ -25,9 +25,8 @@ import { Text } from "@/components/ui/text";
 import { Textarea, TextareaInput } from "@/components/ui/textarea";
 import { VStack } from "@/components/ui/vstack";
 import yangonTownships from "@/constants/yangon-townships.json";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { Profile, useAuthStore } from "@/store/useAuthStore";
-import { decode as atob } from "base-64";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { AlertCircle, ArrowUpCircle, ChevronDown } from "lucide-react-native";
@@ -297,17 +296,12 @@ export const RenterProfileEdit = ({ data }: { data: Profile }) => {
     try {
       const normalizedPhone = phoneNumber.trim();
 
-      const { data: duplicatePhoneUser, error: duplicatePhoneError } =
-        await supabase
-          .from("profiles")
-          .select("id")
-          .eq("phone", normalizedPhone)
-          .neq("id", user.id)
-          .maybeSingle();
+      const { data: phoneCheck } = await apiClient.get<{ exists: boolean }>(
+        `/users/check-phone/${encodeURIComponent(normalizedPhone)}`,
+        { params: { excludeId: user.id } },
+      );
 
-      if (duplicatePhoneError) throw duplicatePhoneError;
-
-      if (duplicatePhoneUser) {
+      if (phoneCheck?.exists) {
         setErrors((prev) => ({
           ...prev,
           phoneNumber: "Phone number already exists",
@@ -320,37 +314,24 @@ export const RenterProfileEdit = ({ data }: { data: Profile }) => {
 
       if (avatarUri && avatarUri !== data.avatar_url && avatarBase64) {
         try {
-          const fileName = `${user.id}/${Date.now()}.jpg`;
+          const mimeMatch = avatarBase64.match(/^data:image\/(\w+);/);
+          const ext = mimeMatch ? mimeMatch[1] : 'jpg';
+          const fileName = `${user.id}.${ext}`;
 
-          let binary;
+          const { data: uploadResult } = await apiClient.post<{ publicUrl: string }>(
+            "/uploads",
+            {
+              filename: fileName,
+              contentBase64: avatarBase64,
+              contentType: `image/${ext}`,
+              folder: "car_rental_app/profiles",
+            },
+          );
 
-          try {
-            binary = atob(avatarBase64);
-          } catch (e) {
-            throw new Error("Invalid image data structure.");
-          }
-
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-
-          const { error: uploadError } = await supabase.storage
-            .from("profiles")
-            .upload(fileName, bytes, {
-              contentType: "image/jpeg",
-              upsert: true,
-            });
-
-          if (uploadError) throw uploadError;
-
-          const { data: urlData } = supabase.storage
-            .from("profiles")
-            .getPublicUrl(fileName);
-
-          uploadedAvatarUrl = urlData.publicUrl;
+          uploadedAvatarUrl = uploadResult.publicUrl;
         } catch (uploadObjError: any) {
-          throw new Error("Avatar upload failed");
+          console.error("[ProfileSave] Upload failed:", uploadObjError?.response?.status, uploadObjError?.response?.data || uploadObjError?.message);
+          throw uploadObjError;
         }
 
         if (!uploadedAvatarUrl) {
@@ -367,12 +348,7 @@ export const RenterProfileEdit = ({ data }: { data: Profile }) => {
         avatar_url: uploadedAvatarUrl || null,
       };
 
-      const { error } = await supabase
-        .from("profiles")
-        .update(updates)
-        .eq("id", user.id);
-
-      if (error) throw error;
+      await apiClient.patch(`/users/${user.id}`, updates);
 
       await fetchProfile(user.id, true);
       (
@@ -387,8 +363,18 @@ export const RenterProfileEdit = ({ data }: { data: Profile }) => {
         type: "success",
       };
       router.back();
-    } catch (error) {
-      Alert.alert("Save failed", "Unable to update profile right now.");
+    } catch (error: any) {
+      const message =
+        error?.response?.data?.message ||
+        error?.response?.statusText ||
+        error?.message ||
+        "Unable to update profile right now.";
+      const status = error?.response?.status;
+      console.error("[ProfileSave] Error:", status, message, error?.config?.url);
+      Alert.alert(
+        "Save failed",
+        status ? `Error ${status}: ${message}` : message,
+      );
     } finally {
       setIsSaving(false);
     }

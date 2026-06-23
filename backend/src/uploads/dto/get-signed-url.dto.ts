@@ -14,5 +14,5 @@ export class GetSignedUrlDto {
 
   @IsOptional()
   @IsString()
-  bucket?: string;
+  folder?: string;
 }

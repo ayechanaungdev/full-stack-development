@@ -7,6 +7,7 @@ import {
   Param,
   Delete,
   ParseIntPipe,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
@@ -27,6 +28,15 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   findAll() {
     return this.usersService.findAll();
+  }
+
+  @Get('check-phone/:phone')
+  @UseGuards(JwtAuthGuard)
+  checkPhone(
+    @Param('phone') phone: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    return this.usersService.checkPhone(phone, excludeId ? parseInt(excludeId, 10) : undefined);
   }
 
   @Get(':id')

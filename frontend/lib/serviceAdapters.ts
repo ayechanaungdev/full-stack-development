@@ -121,11 +121,11 @@ export const storageService = {
     contentBase64: string,
     contentType?: string,
     token?: string,
-    bucket?: string,
+    folder?: string,
   ) =>
     api.post<{ publicUrl: string }>(
       "uploads",
-      { filename, contentBase64, contentType, bucket },
+      { filename, contentBase64, contentType, folder },
       token,
     ),
 
@@ -135,11 +135,11 @@ export const storageService = {
     contentType?: string,
     expiresInSeconds?: number,
     token?: string,
-    bucket?: string,
+    folder?: string,
   ) =>
     api.post<{ uploadUrl: string; publicUrl: string }>(
       "uploads/signed-url",
-      { filename, contentType, expiresInSeconds, bucket },
+      { filename, contentType, expiresInSeconds, folder },
       token,
     ),
 };

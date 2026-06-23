@@ -1,40 +1,57 @@
 import { Injectable } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Injectable()
 export class UploadsService {
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(private readonly cloudinaryService: CloudinaryService) {}
 
   async uploadFromBase64(
     filename: string,
     base64: string,
     contentType?: string,
-    bucket?: string,
+    folder?: string,
   ) {
-    // Remove data:*/*;base64, prefix if present
     const commaIndex = base64.indexOf(',');
     const raw = commaIndex >= 0 ? base64.slice(commaIndex + 1) : base64;
     const buffer = Buffer.from(raw, 'base64');
 
-    return this.firebaseService.uploadFile(
+    return this.cloudinaryService.uploadFile(buffer, {
+      folder,
       filename,
-      buffer,
       contentType,
-      bucket,
-    );
+    });
   }
 
   async getSignedUrl(
     filename: string,
     expiresInSeconds?: number,
     contentType?: string,
-    bucket?: string,
+    folder?: string,
   ) {
-    return this.firebaseService.getSignedUploadUrl(
-      filename,
-      expiresInSeconds,
-      contentType,
-      bucket,
+    const timestamp = Math.round(Date.now() / 1000) + (expiresInSeconds || 300);
+    const signature = cloudinary.utils.api_sign_request(
+      {
+        timestamp,
+        public_id: filename,
+        folder: folder || '',
+      },
+      process.env.CLOUDINARY_API_SECRET as string,
     );
+
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${process.env.CLOUDINARY_CLOUD_NAME}/auto/upload`;
+    const publicUrl = cloudinary.url(filename, {
+      folder: folder || '',
+      secure: true,
+    });
+
+    return {
+      uploadUrl,
+      publicUrl,
+      signature,
+      timestamp,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      folder: folder || '',
+    };
   }
 }

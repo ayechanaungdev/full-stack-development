@@ -4,10 +4,21 @@ import config from './config';
 
 const API_BASE_URL = config.API_BASE_URL;
 
+type AuthFailedHandler = () => void;
+
 class ApiClient {
   private client: AxiosInstance;
   private cachedAccessToken: string | null = null;
   private cachedRefreshToken: string | null = null;
+  private authFailedListeners: AuthFailedHandler[] = [];
+
+  onAuthFailed(handler: AuthFailedHandler) {
+    this.authFailedListeners.push(handler);
+  }
+
+  private notifyAuthFailed() {
+    this.authFailedListeners.forEach((fn) => fn());
+  }
 
   constructor() {
     this.client = axios.create({
@@ -70,6 +81,7 @@ class ApiClient {
           } catch (refreshError) {
             // Refresh failed, logout user
             await this.clearTokens();
+            this.notifyAuthFailed();
             return Promise.reject(refreshError);
           }
         }
