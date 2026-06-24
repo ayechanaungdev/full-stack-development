@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Patch, Param, Body, UseGuards, Request, ParseIntPipe,
+  Controller, Get, Patch, Delete, Param, Body, UseGuards, Request, ParseIntPipe, Query,
 } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
@@ -15,8 +15,12 @@ export class NotificationsController {
   }
 
   @Get()
-  findAll(@Request() req: any) {
-    return this.notificationsService.findAll(req.user.userId);
+  findAll(
+    @Request() req: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.notificationsService.findAll(req.user.userId, page, limit);
   }
 
   @Patch(':id/read')
@@ -39,5 +43,10 @@ export class NotificationsController {
   @Patch('read-many')
   markManyAsRead(@Body() body: { ids: number[] }) {
     return this.notificationsService.markManyAsRead(body.ids);
+  }
+
+  @Delete()
+  deleteMany(@Body() body: { ids: number[] }, @Request() req: any) {
+    return this.notificationsService.deleteMany(req.user.userId, body.ids);
   }
 }

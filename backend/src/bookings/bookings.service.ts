@@ -31,10 +31,10 @@ export class BookingsService {
         const carOwnerId = newBooking.car?.ownerId;
 
         // Send push notification to customer
-        if (newBooking.user && newBooking.user.fcmToken) {
+        if (newBooking.user?.profile?.expo_push_token) {
             const title = 'Booking Confirmed!';
             const body = `Your booking for ${newBooking.car.brand} ${newBooking.car.model} is successful.`;
-            this.firebaseService.sendPushNotification(newBooking.user.fcmToken, title, body);
+            this.firebaseService.sendPushNotification(newBooking.user.profile.expo_push_token, title, body);
         }
 
         // Create notification + Socket.IO emit for car owner
@@ -62,10 +62,10 @@ export class BookingsService {
             const ownerBadgeCounts = await this.getBadgeCounts(carOwnerId);
             this.chatGateway.emitToUser(carOwnerId, 'badgeUpdate', ownerBadgeCounts);
 
-            // Send push to owner if they have fcm token
-            if (newBooking.car.owner?.fcmToken) {
+            // Send push to owner if they have expo push token
+            if (newBooking.car.owner?.profile?.expo_push_token) {
                 this.firebaseService.sendPushNotification(
-                    newBooking.car.owner.fcmToken,
+                    newBooking.car.owner.profile.expo_push_token,
                     ownerNotiTitle,
                     ownerNotiBody,
                 );
@@ -112,10 +112,10 @@ export class BookingsService {
             const customerBadgeCounts = await this.getBadgeCounts(updatedBooking.userId);
             this.chatGateway.emitToUser(updatedBooking.userId, 'badgeUpdate', customerBadgeCounts);
 
-            // Send push notification if FCM token exists
-            if (updatedBooking.user.fcmToken) {
+            // Send push notification if expo push token exists
+            if (updatedBooking.user?.profile?.expo_push_token) {
                 this.firebaseService.sendPushNotification(
-                    updatedBooking.user.fcmToken,
+                    updatedBooking.user.profile.expo_push_token,
                     title,
                     body,
                 );
@@ -147,9 +147,9 @@ export class BookingsService {
             const ownerBadgeCounts = await this.getBadgeCounts(carOwnerId);
             this.chatGateway.emitToUser(carOwnerId, 'badgeUpdate', ownerBadgeCounts);
 
-            if (updatedBooking.car.owner?.fcmToken) {
+            if (updatedBooking.car.owner?.profile?.expo_push_token) {
                 this.firebaseService.sendPushNotification(
-                    updatedBooking.car.owner.fcmToken,
+                    updatedBooking.car.owner.profile.expo_push_token,
                     ownerTitle,
                     ownerBody,
                 );

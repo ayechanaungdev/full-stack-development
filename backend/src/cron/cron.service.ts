@@ -70,7 +70,7 @@ export class CronService {
                 },
             },
             include: {
-                user: true,
+                user: { include: { profile: true } },
             },
         });
 
@@ -89,7 +89,7 @@ export class CronService {
                 continue;
             }
 
-            if (booking.user && booking.user.fcmToken) {
+            if (booking.user?.profile?.expo_push_token) {
                 const title = booking.status === 'APPROVED'
                     ? 'ကားငှားရမ်းမှု သတိပေးချက် 🚗'
                     : 'ခရီးစဉ်အတည်ပြုရန် သတိပေးချက် ⚠️';
@@ -99,7 +99,7 @@ export class CronService {
                     : `မင်္ဂလာပါ ${booking.user.name || 'User'}၊ မနက်ဖြန်အတွက် သင်ငှားရမ်းထားသည့် ခရီးစဉ်သည် PENDING ဖြစ်နေဆဲဖြစ်ပါသဖြင့် အတည်ပြုပေးပါရန် သတိပေးအပ်ပါသည်ခင်ဗျာ။`;
 
                 await this.firebaseService.sendPushNotification(
-                    booking.user.fcmToken,
+                    booking.user.profile.expo_push_token,
                     title,
                     body,
                 );

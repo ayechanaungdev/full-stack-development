@@ -26,7 +26,7 @@ export class ChatService {
                         id: true,
                         email: true,
                         name: true,
-                        profile: { select: { avatar_url: true, full_name: true } },
+                        profile: { select: { avatar_url: true, full_name: true, expo_push_token: true } },
                     },
                 },
             },

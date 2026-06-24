@@ -59,11 +59,23 @@ export class NotificationsService {
     });
   }
 
-  async findAll(userId: number) {
-    return this.prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
+  async findAll(userId: number, page = 1, limit = 50) {
+    const skip = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      this.prisma.notification.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.notification.count({ where: { userId } }),
+    ]);
+    return { data, total, page, limit };
+  }
+
+  async deleteMany(userId: number, ids: number[]) {
+    return this.prisma.notification.deleteMany({
+      where: { id: { in: ids }, userId },
     });
   }
 }

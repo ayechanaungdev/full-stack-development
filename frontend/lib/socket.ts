@@ -37,7 +37,16 @@ class SocketService {
       reconnectionDelayMax: 15000,
     });
 
+    this.socket.on('connect', () => {
+      console.log('[Socket] Connected with ID:', this.socket?.id);
+    });
+
+    this.socket.on('disconnect', (reason) => {
+      console.log('[Socket] Disconnected:', reason);
+    });
+
     this.socket.on('connect_error', async (err) => {
+      console.log('[Socket] Connect error:', err.message);
       if (err.message?.includes('Invalid token') || err.message?.includes('jwt expired')) {
         let newToken = await AsyncStorage.getItem('accessToken');
         if ((!newToken || newToken === token) && this.tokenRefreshHandler) {
