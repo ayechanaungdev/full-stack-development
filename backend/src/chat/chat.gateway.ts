@@ -11,6 +11,7 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ChatService } from './chat.service';
 import { FirebaseService } from 'src/firebase/firebase.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 import { UnauthorizedException } from '@nestjs/common';
 
 @WebSocketGateway({
@@ -28,6 +29,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         private readonly jwtService: JwtService,
         private readonly chatService: ChatService,
         private readonly firebaseService: FirebaseService,
+        private readonly prisma: PrismaService,
     ) { }
 
     async handleConnection(client: Socket) {
@@ -107,8 +109,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
         client.emit('newMessage', formattedMessage);
 
+        const senderName = message.sender?.profile?.full_name || message.sender?.name || 'Someone';
+
         if (message.receiver?.profile?.expo_push_token) {
-            const senderName = message.sender?.profile?.full_name || message.sender?.name || 'Someone';
             console.log(`[ChatGateway] Sending push to receiver ${data.receiverId}: ${data.content.substring(0, 30)}`);
             this.firebaseService.sendPushNotification(
                 message.receiver.profile.expo_push_token,
@@ -120,9 +123,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
                     url: `carrentalv2://chat/${sender.userId}`,
                 },
             );
-        } else {
-            console.log(`[ChatGateway] No push token for receiver ${data.receiverId}, token:`, message.receiver?.profile?.expo_push_token);
         }
+
+        await this.prisma.notification.create({
+            data: {
+                title: senderName,
+                body: data.content,
+                type: 'message',
+                userId: data.receiverId,
+                senderId: sender.userId,
+                referenceId: String(sender.userId),
+            },
+        });
 
         return formattedMessage;
     }

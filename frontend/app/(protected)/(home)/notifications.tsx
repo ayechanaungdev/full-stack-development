@@ -40,7 +40,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type TabType = "all" | "booking" | "message" | "system" | "owner-car";
 
-const mapType = (_type: string): TabType => 'booking';
+const mapType = (type: string): TabType => {
+  if (type === 'NEW_BOOKING' || type.startsWith('STATUS_CHANGED_') || type.startsWith('OWNER_STATUS_CHANGED_') || type.startsWith('UPCOMING_REMINDER_')) {
+    return 'booking';
+  }
+  if (type === 'message') return 'message';
+  if (type === 'system') return 'system';
+  if (type === 'owner-car') return 'owner-car';
+  return 'booking';
+};
 
 const mapNotification = (n: any): any => {
   const mappedType: TabType = mapType(n.type);
@@ -56,6 +64,8 @@ const mapNotification = (n: any): any => {
     created_at: n.createdAt,
     _originalType: n.type,
     _bookingId: n.bookingId,
+    _senderId: n.senderId,
+    _referenceId: n.referenceId,
   };
 };
 
@@ -63,7 +73,7 @@ export default function NotificationScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { invalidateBadgeCounts } = useBadgeActions();
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<TabType>("all");
   const [isViewAll, setIsViewAll] = useState(false);
@@ -78,7 +88,13 @@ export default function NotificationScreen() {
   const [showAlert, setShowAlert] = useState(false);
   const [userRefreshing, setUserRefreshing] = useState(false);
   const [isForceLoading, setIsForceLoading] = useState(false);
-  const tabs: TabType[] = ["all", "booking"];
+  const tabs: TabType[] = ["all", "booking", "message"];
+  const isRenter = profile?.role === "renter";
+
+  if (!isRenter) {
+    tabs.push("owner-car");
+    tabs.push("system");
+  }
 
   const handleManualRefresh = async () => {
     setUserRefreshing(true);
@@ -129,6 +145,13 @@ export default function NotificationScreen() {
       });
 
     if (activeTab === "all") return all;
+    if (activeTab === "message") {
+      const unreadMessages = all.filter((n) => n.type === "message" && !n.is_read);
+      return unreadMessages.reduce((acc: any[], cur: any) => {
+        if (!acc.find((m) => m.sender_id === cur.sender_id)) acc.push(cur);
+        return acc;
+      }, []);
+    }
     return all.filter((n) => n.type === activeTab);
   }, [data, activeTab]);
 
@@ -140,33 +163,55 @@ export default function NotificationScreen() {
   }, [activeTab]);
 
   const displayedNotifications = useMemo(() => {
+    const allNotis = safeNotifications;
+    const unreadMessages = allNotis.filter((n) => n.type === "message" && !n.is_read);
+    const latestPerSender = unreadMessages.reduce((acc: any[], cur: any) => {
+      if (!acc.find((m) => m.sender_id === cur.sender_id)) acc.push(cur);
+      return acc;
+    }, []);
+
     if (!isViewAll) {
       if (activeTab === "all") {
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         threeDaysAgo.setHours(0, 0, 0, 0);
 
-        const systemNotis = safeNotifications.filter(
+        const systemNotis = allNotis.filter(
           (item) =>
             item.type === "system" && new Date(item.created_at) >= threeDaysAgo,
         );
 
-        const otherNotis = safeNotifications.filter(
+        const otherNotis = allNotis.filter(
           (item) =>
-            item.type !== "system" || new Date(item.created_at) < threeDaysAgo,
+            (item.type !== "system" || new Date(item.created_at) < threeDaysAgo)
+            && item.type !== "message",
         );
 
         const limitedSystems = systemNotis.slice(0, 3);
+        const limitedMessages = latestPerSender.slice(0, 2);
+        const remainingSlots = 5 - limitedSystems.length - limitedMessages.length;
+        const limitedOthers = otherNotis.slice(0, Math.max(0, remainingSlots));
 
-        const remainingSlots = 5 - limitedSystems.length;
-        const limitedOthers = otherNotis.slice(0, remainingSlots);
-
-        return [...limitedSystems, ...limitedOthers];
+        return [...limitedSystems, ...limitedMessages, ...limitedOthers];
       }
 
-      return safeNotifications.slice(0, 5);
+      return allNotis.slice(0, 5);
     }
-    return safeNotifications;
+
+    if (activeTab === "message") return latestPerSender;
+    if (activeTab === "all") {
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      threeDaysAgo.setHours(0, 0, 0, 0);
+      const recentSystems = allNotis.filter(
+        (item) => item.type === "system" && new Date(item.created_at) >= threeDaysAgo,
+      );
+      const otherTypes = allNotis.filter(
+        (item) => item.type !== "message" && (item.type !== "system" || new Date(item.created_at) < threeDaysAgo),
+      );
+      return [...recentSystems, ...latestPerSender, ...otherTypes];
+    }
+    return allNotis;
   }, [safeNotifications, isViewAll, activeTab]);
 
   const { sections } = useMemo(() => {
@@ -247,6 +292,12 @@ export default function NotificationScreen() {
 
       if (item._bookingId) {
         router.push(`/booking/${item._bookingId}` as any);
+      } else if (item.type === 'message' && item._senderId) {
+        router.push(`/chat/${item._senderId}` as any);
+      } else if (item.type === 'system' && item._referenceId) {
+        router.push(`/reports/${item._referenceId}` as any);
+      } else if (item.type === 'owner-car' && item._referenceId) {
+        router.push(`/car/${item._referenceId}` as any);
       }
     }
   };
@@ -613,6 +664,7 @@ export default function NotificationScreen() {
                 {[...Array(3)].map((_, index) => renderSkeletonCard(index))}
               </Box>
             ) : !isViewAll &&
+              displayedNotifications.length > 0 &&
               safeNotifications.length > displayedNotifications.length ? (
               <TouchableOpacity
                 onPress={handleViewAllPress}
