@@ -49,7 +49,10 @@ export class BookingsRepository extends BaseRepository<any> {
   async createWithRelations(data: any): Promise<any> {
     return this.prisma.booking.create({
       data,
-      include: { car: true, user: true },
+      include: {
+        car: { include: { owner: { include: { profile: true } } } },
+        user: { include: { profile: true } },
+      },
     });
   }
 
@@ -57,7 +60,10 @@ export class BookingsRepository extends BaseRepository<any> {
     return this.prisma.booking.update({
       where: { id },
       data: { status: status as any },
-      include: { user: true, car: true },
+      include: {
+        user: { include: { profile: true } },
+        car: { include: { owner: { include: { profile: true } } } },
+      },
     });
   }
 

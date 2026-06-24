@@ -2,21 +2,21 @@ import { Injectable, ConflictException } from '@nestjs/common';
 import { BookingsRepository } from './bookings.repository';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { FirebaseService } from 'src/firebase/firebase.service';
+import { ChatGateway } from 'src/chat/chat.gateway';
+import { PrismaService } from 'src/prisma/prisma.service';
 
-/**
- * Bookings Service
- * Business logic layer - uses Repository for data access
- */
 @Injectable()
 export class BookingsService {
     constructor(
         private bookingsRepository: BookingsRepository,
-        private firebaseService: FirebaseService
+        private firebaseService: FirebaseService,
+        private chatGateway: ChatGateway,
+        private prisma: PrismaService,
     ) { }
 
     async create(createBookingDto: CreateBookingDto) {
         const { carId, startDate, endDate } = createBookingDto;
-        // 1. Check if the car is already booked during these dates
+
         const existingBooking = await this.bookingsRepository.findOverlappingBooking(
             carId,
             new Date(startDate),
@@ -24,68 +24,141 @@ export class BookingsService {
         );
 
         if (existingBooking) {
-            throw new ConflictException('This car is already booked for the selected dates! 🚫');
+            throw new ConflictException('This car is already booked for the selected dates!');
         }
-        // 2. Create the booking (return အစား variable ထဲ အရင်ထည့်ပါမယ်)
+
         const newBooking = await this.bookingsRepository.createWithRelations(createBookingDto);
+        const carOwnerId = newBooking.car?.ownerId;
 
-        // 👈 3. User မှာ fcmToken ရှိရင် Notification လှမ်းပို့ပါမယ်
+        // Send push notification to customer
         if (newBooking.user && newBooking.user.fcmToken) {
-            const title = 'Booking Confirmed! 🎉';
+            const title = 'Booking Confirmed!';
             const body = `Your booking for ${newBooking.car.brand} ${newBooking.car.model} is successful.`;
-
-            // Notification ပို့တာကို စောင့်မနေဘဲ (await မပါဘဲ) နောက်ကွယ်ကနေ ပို့ခိုင်းလိုက်ပါမယ်
-            this.firebaseService.sendPushNotification(
-                newBooking.user.fcmToken,
-                title,
-                body
-            );
+            this.firebaseService.sendPushNotification(newBooking.user.fcmToken, title, body);
         }
-        return newBooking; // နောက်ဆုံးမှ newBooking ကို return ပြန်ပါမယ်
+
+        // Create notification + Socket.IO emit for car owner
+        if (carOwnerId) {
+            const ownerNotiTitle = 'New Booking Received!';
+            const ownerNotiBody = `${newBooking.user?.name || 'A user'} booked your ${newBooking.car.brand} ${newBooking.car.model}.`;
+
+            const notification = await this.prisma.notification.create({
+                data: {
+                    title: ownerNotiTitle,
+                    body: ownerNotiBody,
+                    type: 'NEW_BOOKING',
+                    userId: carOwnerId,
+                    senderId: newBooking.userId,
+                    bookingId: newBooking.id,
+                },
+            });
+
+            this.chatGateway.emitToUser(carOwnerId, 'newBooking', {
+                booking: newBooking,
+                notification,
+            });
+
+            // Emit badge update to owner
+            const ownerBadgeCounts = await this.getBadgeCounts(carOwnerId);
+            this.chatGateway.emitToUser(carOwnerId, 'badgeUpdate', ownerBadgeCounts);
+
+            // Send push to owner if they have fcm token
+            if (newBooking.car.owner?.fcmToken) {
+                this.firebaseService.sendPushNotification(
+                    newBooking.car.owner.fcmToken,
+                    ownerNotiTitle,
+                    ownerNotiBody,
+                );
+            }
+        }
+
+        return newBooking;
     }
 
     async findAll(user: { userId: number; role: string }) {
-        // RBAC: Regular USERs can only see their own bookings. ADMINs see everything.
         if (user.role === 'ADMIN') {
             return this.bookingsRepository.findAll();
         }
         return this.bookingsRepository.findByUserId(user.userId);
     }
 
-    // bookings.service.ts ထဲတွင် ထည့်သွင်းရန် method
     async updateStatus(id: number, status: string) {
-        // Database တွင် Status အား Update လုပ်ပါမည်
         const updatedBooking = await this.bookingsRepository.updateStatus(id, status);
 
-        // User တွင် FCM Token ရှိပါက Notification ချက်ချင်း ပို့ပါမည်
-        if (updatedBooking.user && updatedBooking.user.fcmToken) {
-            const title = `Booking Status Updated! 🔔`;
+        // Notify the customer
+        if (updatedBooking.user) {
+            const title = `Booking Status Updated!`;
             const body = `Your booking for ${updatedBooking.car.brand} ${updatedBooking.car.model} has been updated to ${status}.`;
 
-            // Push Notification ပို့ပါမည်
-            this.firebaseService.sendPushNotification(
-                updatedBooking.user.fcmToken,
-                title,
-                body,
-            );
-
-            // Database Notification Table ထဲတွင် မှတ်တမ်းတင်ပါမည်
-            // Note: This still uses prisma directly for notification creation - could be refactored later
-            await this.bookingsRepository['prisma'].notification.create({
+            // Create DB notification record
+            const notification = await this.prisma.notification.create({
                 data: {
                     title,
                     body,
-                    type: `STATUS_CHANGED_${status}`, // ဥပမာ - STATUS_CHANGED_APPROVED
+                    type: `STATUS_CHANGED_${status}`,
                     userId: updatedBooking.userId,
+                    senderId: updatedBooking.car.ownerId,
                     bookingId: updatedBooking.id,
                 },
             });
+
+            // Emit via Socket.IO
+            this.chatGateway.emitToUser(updatedBooking.userId, 'bookingUpdate', {
+                booking: updatedBooking,
+                notification,
+            });
+
+            // Emit badge update to customer
+            const customerBadgeCounts = await this.getBadgeCounts(updatedBooking.userId);
+            this.chatGateway.emitToUser(updatedBooking.userId, 'badgeUpdate', customerBadgeCounts);
+
+            // Send push notification if FCM token exists
+            if (updatedBooking.user.fcmToken) {
+                this.firebaseService.sendPushNotification(
+                    updatedBooking.user.fcmToken,
+                    title,
+                    body,
+                );
+            }
+        }
+
+        // Also notify the car owner about the status change
+        const carOwnerId = updatedBooking.car?.ownerId;
+        if (carOwnerId && carOwnerId !== updatedBooking.userId) {
+            const ownerTitle = `Booking #${updatedBooking.id} ${status}`;
+            const ownerBody = `Booking for ${updatedBooking.car.brand} ${updatedBooking.car.model} by ${updatedBooking.user?.name || 'customer'} is now ${status}.`;
+
+            const ownerNoti = await this.prisma.notification.create({
+                data: {
+                    title: ownerTitle,
+                    body: ownerBody,
+                    type: `OWNER_STATUS_CHANGED_${status}`,
+                    userId: carOwnerId,
+                    senderId: updatedBooking.userId,
+                    bookingId: updatedBooking.id,
+                },
+            });
+
+            this.chatGateway.emitToUser(carOwnerId, 'bookingUpdate', {
+                booking: updatedBooking,
+                notification: ownerNoti,
+            });
+
+            const ownerBadgeCounts = await this.getBadgeCounts(carOwnerId);
+            this.chatGateway.emitToUser(carOwnerId, 'badgeUpdate', ownerBadgeCounts);
+
+            if (updatedBooking.car.owner?.fcmToken) {
+                this.firebaseService.sendPushNotification(
+                    updatedBooking.car.owner.fcmToken,
+                    ownerTitle,
+                    ownerBody,
+                );
+            }
         }
 
         return updatedBooking;
     }
 
-    // Additional business logic methods using repository
     async findByCarId(carId: number) {
         return this.bookingsRepository.findByCarId(carId);
     }
@@ -112,7 +185,6 @@ export class BookingsService {
         const lastMonthYear = localMonth === 0 ? localYear - 1 : localYear;
         const lastMonthIndex = localMonth === 0 ? 11 : localMonth - 1;
 
-        // Fetch completed bookings for owner's cars
         const bookings = await this.bookingsRepository['prisma'].booking.findMany({
             where: {
                 car: { ownerId },
@@ -125,7 +197,6 @@ export class BookingsService {
             },
         });
 
-        // Compute earnings
         const earnings = bookings.reduce(
             (acc, b) => {
                 const bookingTotal = Number(b.totalPrice) || 0;
@@ -148,7 +219,6 @@ export class BookingsService {
             { total: 0, today: 0, thisMonth: 0, lastMonth: 0, thisYear: 0 },
         );
 
-        // Fetch counts for Business Overview
         const carCount = await this.bookingsRepository['prisma'].car.count({
             where: { ownerId },
         });
@@ -170,7 +240,6 @@ export class BookingsService {
             drivers: driverCount || 0,
         };
 
-        // Fetch today's trips
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
         const todayEnd = new Date();
@@ -213,7 +282,6 @@ export class BookingsService {
             },
         });
 
-        // Map today's trips to match frontend camelCase property expectations
         const trips = todayTrips.map(trip => ({
             id: trip.id,
             pickupLocation: trip.pickupLocation,
@@ -232,7 +300,6 @@ export class BookingsService {
             Driver: trip.driver ? { name: trip.driver.name } : null,
         }));
 
-        // Fetch fleet status
         const cars = await this.bookingsRepository['prisma'].car.findMany({
             where: { ownerId },
             select: { status: true },
@@ -248,5 +315,17 @@ export class BookingsService {
         };
 
         return { earnings, overview, trips, fleet };
+    }
+
+    private async getBadgeCounts(userId: number) {
+        const [notifications, messages, bookings, reports] = await Promise.all([
+            this.prisma.notification.count({ where: { userId, isRead: false } }),
+            this.prisma.message.count({ where: { receiverId: userId, isRead: false } }),
+            this.prisma.booking.count({
+                where: { isRead: false, OR: [{ userId }, { ownerId: userId }] },
+            }),
+            this.prisma.dailyReport.count({ where: { ownerId: userId, isRead: false } }),
+        ]);
+        return { notifications, messages, bookings, reports };
     }
 }
