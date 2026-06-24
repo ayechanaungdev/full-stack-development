@@ -1,4 +1,5 @@
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
+import { socketService } from "@/lib/socket";
 import { useAuthStore } from "@/store/useAuthStore";
 import { adjustBadgeCount } from "@/store/useBadgeStore";
 import { create } from "zustand";
@@ -38,18 +39,32 @@ interface ChatState {
   markAsRead: (userId: string, partnerId: string) => Promise<number>;
   subscribeToMessages: (userId: string) => () => void;
   addIncomingMessage: (message: Message) => void;
-  // Clears the messages array so switching conversations never
-  // shows a stale previous conversation's messages
   clearMessages: () => void;
   updateMessage: (message: Message) => void;
   clearConversations: () => void;
 }
 
-// Global variables to ensure only ONE realtime subscription is active
-// across the entire app (preventing double message processing)
-let activeChannel: ReturnType<typeof supabase.channel> | null = null;
 let subscriberCount = 0;
+let newMessageHandler: ((message: any) => void) | null = null;
 const processedMessageIds = new Set<string>();
+
+const mapApiMessage = (msg: any): Message => ({
+  id: String(msg.id),
+  sender_id: String(msg.senderId),
+  receiver_id: String(msg.receiverId),
+  content: msg.content,
+  is_read: msg.isRead ?? msg.is_read ?? false,
+  created_at: msg.createdAt ?? msg.created_at,
+});
+
+const mapApiConversation = (conv: any): Conversation => ({
+  partner_id: String(conv.partnerId),
+  partner_name: conv.partnerName,
+  partner_avatar: conv.partnerAvatar,
+  last_message: conv.lastMessage,
+  last_message_at: conv.lastMessageAt,
+  unread_count: conv.unreadCount,
+});
 
 export const useChatStore = create<ChatState>((set, get) => ({
   activePartnerId: null,
@@ -65,65 +80,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchConversations: async (userId: string) => {
     set({ isLoadingConversations: true });
-    const { data: allMessages, error } = await supabase
-      .from("messages")
-      .select("*")
-      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-      .order("created_at", { ascending: false });
-
-    if (error || !allMessages) {
+    try {
+      const response = await apiClient.get('/chat/conversations');
+      const data = response.data ?? [];
+      set({ conversations: data.map(mapApiConversation), isLoadingConversations: false });
+    } catch {
       set({ isLoadingConversations: false });
-      return;
     }
-
-    const conversationMap = new Map<
-      string,
-      { lastMsg: Message; unreadCount: number }
-    >();
-    for (const msg of allMessages) {
-      const partnerId =
-        msg.sender_id === userId ? msg.receiver_id : msg.sender_id;
-      if (!conversationMap.has(partnerId)) {
-        conversationMap.set(partnerId, { lastMsg: msg, unreadCount: 0 });
-      }
-      if (msg.sender_id === partnerId && !msg.is_read) {
-        conversationMap.get(partnerId)!.unreadCount++;
-      }
-    }
-
-    const partnerIds = Array.from(conversationMap.keys());
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, full_name, avatar_url")
-      .in("id", partnerIds);
-
-    const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
-    const conversations: Conversation[] = partnerIds.map((partnerId) => {
-      const entry = conversationMap.get(partnerId)!;
-      const profile = profileMap.get(partnerId);
-      return {
-        partner_id: partnerId,
-        partner_name: profile?.full_name || "Unknown User",
-        partner_avatar: profile?.avatar_url || null,
-        last_message: entry.lastMsg.content,
-        last_message_at: entry.lastMsg.created_at,
-        unread_count: entry.unreadCount,
-      };
-    });
-
-    set({ conversations, isLoadingConversations: false });
   },
 
   fetchMessages: async (userId: string, partnerId: string) => {
     set({ isLoadingMessages: true });
-    const { data } = await supabase
-      .from("messages")
-      .select("*")
-      .or(
-        `and(sender_id.eq.${userId},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${userId})`,
-      )
-      .order("created_at", { ascending: true });
-    set({ messages: data || [], isLoadingMessages: false });
+    try {
+      const response = await apiClient.get(`/chat/history/${Number(partnerId)}`);
+      const data = response.data ?? [];
+      set({ messages: data.map(mapApiMessage), isLoadingMessages: false });
+    } catch {
+      set({ messages: [], isLoadingMessages: false });
+    }
   },
 
   sendMessage: async (
@@ -131,99 +105,55 @@ export const useChatStore = create<ChatState>((set, get) => ({
     receiverId: string,
     content: string,
   ) => {
-    const { data, error } = await supabase
-      .from("messages")
-      .insert({ sender_id: senderId, receiver_id: receiverId, content })
-      .select()
-      .single();
-    if (error) {
-      return;
-    }
-    if (data) {
-      set((state) => {
-        const newConvs = [...state.conversations];
-        const idx = newConvs.findIndex((c) => c.partner_id === receiverId);
-        if (idx >= 0) {
-          newConvs[idx] = {
-            ...newConvs[idx],
-            last_message: content,
-            last_message_at: data.created_at,
-          };
-          const updatedConv = newConvs.splice(idx, 1)[0];
-          newConvs.unshift(updatedConv);
-        } else {
-          get().fetchConversations(senderId);
-        }
-
-        return {
-          messages: [...state.messages, data],
-          conversations: idx >= 0 ? newConvs : state.conversations,
-        };
-      });
-    }
+    socketService.emit('sendMessage', {
+      receiverId: Number(receiverId),
+      content,
+    });
   },
 
   markAsRead: async (userId: string, partnerId: string) => {
-    const { data } = await supabase
-      .from("messages")
-      .update({ is_read: true })
-      .select("id")
-      .eq("sender_id", partnerId)
-      .eq("receiver_id", userId)
-      .eq("is_read", false);
+    try {
+      const response = await apiClient.patch('/chat/messages/read', {
+        partnerId: Number(partnerId),
+      });
+      const readCount = response.data?.count ?? 0;
 
-    const readCount = data?.length ?? 0;
-
-    if (readCount > 0) {
-      adjustBadgeCount(userId, 'messages', -readCount);
-    }
-
-    set((state) => {
-      const newConvs = [...state.conversations];
-      const idx = newConvs.findIndex((c) => c.partner_id === partnerId);
-      if (idx >= 0) {
-        newConvs[idx] = { ...newConvs[idx], unread_count: 0 };
+      if (readCount > 0) {
+        adjustBadgeCount(userId, 'messages', -readCount);
       }
-      return { conversations: newConvs };
-    });
 
-    return readCount;
+      set((state) => {
+        const newConvs = [...state.conversations];
+        const idx = newConvs.findIndex((c) => c.partner_id === partnerId);
+        if (idx >= 0) {
+          newConvs[idx] = { ...newConvs[idx], unread_count: 0 };
+        }
+        return { conversations: newConvs };
+      });
+
+      return readCount;
+    } catch {
+      return 0;
+    }
   },
 
   subscribeToMessages: (userId: string) => {
     subscriberCount++;
-    if (!activeChannel) {
-      const channelName = `messages-realtime-${userId}`;
-      activeChannel = supabase
-        .channel(channelName)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "messages",
-            filter: `receiver_id=eq.${userId}`,
-          },
-          (payload) => get().addIncomingMessage(payload.new as Message),
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "messages",
-            filter: `sender_id=eq.${userId}`,
-          },
-          (payload) => get().updateMessage(payload.new as Message),
-        )
-        .subscribe();
+
+    if (subscriberCount === 1) {
+      newMessageHandler = (message: any) => {
+        get().addIncomingMessage(mapApiMessage(message));
+      };
+      socketService.on('newMessage', newMessageHandler);
     }
 
     return () => {
       subscriberCount--;
-      if (subscriberCount <= 0 && activeChannel) {
-        supabase.removeChannel(activeChannel);
-        activeChannel = null;
+      if (subscriberCount <= 0) {
+        if (newMessageHandler) {
+          socketService.off('newMessage', newMessageHandler);
+          newMessageHandler = null;
+        }
         subscriberCount = 0;
       }
     };
@@ -234,15 +164,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     processedMessageIds.add(message.id);
     if (processedMessageIds.size > 500) {
       const iterator = processedMessageIds.values();
-      processedMessageIds.delete(iterator.next().value!); // keep set strictly bounded
+      processedMessageIds.delete(iterator.next().value!);
     }
 
     set((state) => {
-      // Check if message already exists
       const exists = state.messages.some((m) => m.id === message.id);
-      if (exists) return state; // skip duplicates
+      if (exists) return state;
 
-      // Only append if we are currently chatting with the sender
       const inCurrent = state.activePartnerId === message.sender_id || state.activePartnerId === message.receiver_id;
 
       let newConvs = [...state.conversations];
@@ -263,9 +191,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().fetchConversations(message.receiver_id);
       }
 
-      return { 
+      return {
         messages: inCurrent ? [...state.messages, message] : state.messages,
-        conversations: convIndex >= 0 ? newConvs : state.conversations
+        conversations: convIndex >= 0 ? newConvs : state.conversations,
       };
     });
 
@@ -273,11 +201,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const currentUserId = useAuthStore.getState().user?.id;
     const isViewingPartner = state.activePartnerId === message.sender_id;
 
-    if (!isViewingPartner && currentUserId && currentUserId === message.receiver_id) {
-      adjustBadgeCount(currentUserId, 'messages', 1);
+    if (!isViewingPartner && currentUserId && String(currentUserId) === message.receiver_id) {
+      adjustBadgeCount(String(currentUserId), 'messages', 1);
     }
 
-    // If the message is from the partner we are currently viewing, mark it as read!
     if (state.activePartnerId === message.sender_id) {
       state.markAsRead(message.receiver_id, message.sender_id);
     }
