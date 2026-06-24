@@ -21,7 +21,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer()
     server: Server;
 
-    // Track online users: Map<userId (number), socketId (string)>
     private activeConnections = new Map<number, string>();
 
     constructor(
@@ -29,7 +28,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         private readonly chatService: ChatService,
     ) { }
 
-    // Authenticate user on socket connection
     async handleConnection(client: Socket) {
         try {
             const authHeader =
@@ -38,46 +36,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 client.handshake.query?.token;
 
             if (!authHeader) {
-                console.log('WebSocket Connection Rejected: No authentication token found.');
                 client.disconnect();
                 return;
             }
 
-            // Handle both raw token or 'Bearer <token>' format
             const token = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
                 ? authHeader.replace('Bearer ', '')
                 : authHeader;
 
-            // Verify and decode JWT token (secret matches Day 6 configuration)
             const payload = await this.jwtService.verifyAsync(token, {
                 secret: 'MY_SUPER_SECRET_KEY_123',
             });
 
-            // Save user details to socket data object
             client.data.user = {
                 userId: payload.sub,
                 email: payload.email,
                 role: payload.role,
             };
 
-            // Store in our active connections tracker
             this.activeConnections.set(payload.sub, client.id);
-            console.log(`WebSocket Connected: ${payload.email} (${client.id})`);
         } catch (err) {
-            console.log('WebSocket Connection Rejected: Invalid token.', err.message);
             client.disconnect();
         }
     }
 
-    // Clean up on client disconnect
     handleDisconnect(client: Socket) {
         if (client.data.user) {
             this.activeConnections.delete(client.data.user.userId);
-            console.log(`WebSocket Disconnected: ${client.data.user.email}`);
         }
     }
 
-    // Listen for the "sendMessage" event from client
     @SubscribeMessage('sendMessage')
     async handleMessage(
         @MessageBody() data: { receiverId: number; content: string },
@@ -88,7 +76,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             throw new UnauthorizedException('Socket client not authenticated.');
         }
 
-        // 1. Save message to PostgreSQL DB
         const message = await this.chatService.saveMessage(
             sender.userId,
             data.receiverId,
@@ -101,22 +88,81 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             createdAt: message.createdAt,
             senderId: message.senderId,
             receiverId: message.receiverId,
+            isRead: message.isRead,
             sender: {
                 id: message.sender.id,
                 email: message.sender.email,
                 name: message.sender.name,
+                fullName: message.sender.profile?.full_name || message.sender.name,
+                avatarUrl: message.sender.profile?.avatar_url || null,
             },
         };
 
-        // 2. Deliver message to receiver if they are online
         const receiverSocketId = this.activeConnections.get(data.receiverId);
         if (receiverSocketId) {
             this.server.to(receiverSocketId).emit('newMessage', formattedMessage);
         }
 
-        // 3. Send message back to sender's own app instance as confirmation
         client.emit('newMessage', formattedMessage);
 
         return formattedMessage;
+    }
+
+    @SubscribeMessage('markAsRead')
+    async handleMarkAsRead(
+        @MessageBody() data: { partnerId: number },
+        @ConnectedSocket() client: Socket,
+    ) {
+        const sender = client.data.user;
+        if (!sender) return;
+
+        const result = await this.chatService.markMessagesAsRead(sender.userId, data.partnerId);
+
+        const partnerSocketId = this.activeConnections.get(data.partnerId);
+        if (partnerSocketId && result.count > 0) {
+            this.server.to(partnerSocketId).emit('messagesRead', {
+                readByUserId: sender.userId,
+                count: result.count,
+            });
+        }
+
+        return result;
+    }
+
+    @SubscribeMessage('typing')
+    async handleTyping(
+        @MessageBody() data: { receiverId: number; isTyping: boolean },
+        @ConnectedSocket() client: Socket,
+    ) {
+        const sender = client.data.user;
+        if (!sender) return;
+
+        const receiverSocketId = this.activeConnections.get(data.receiverId);
+        if (receiverSocketId) {
+            this.server.to(receiverSocketId).emit('typing', {
+                userId: sender.userId,
+                isTyping: data.isTyping,
+            });
+        }
+    }
+
+    isUserOnline(userId: number): boolean {
+        return this.activeConnections.has(userId);
+    }
+
+    emitToUser(userId: number, event: string, data: any) {
+        const socketId = this.activeConnections.get(userId);
+        if (socketId) {
+            this.server.to(socketId).emit(event, data);
+        }
+    }
+
+    emitToMultipleUsers(userIds: number[], event: string, data: any) {
+        for (const userId of userIds) {
+            const socketId = this.activeConnections.get(userId);
+            if (socketId) {
+                this.server.to(socketId).emit(event, data);
+            }
+        }
     }
 }
