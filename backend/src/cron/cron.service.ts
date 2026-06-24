@@ -71,32 +71,56 @@ export class CronService {
             },
             include: {
                 user: { include: { profile: true } },
+                car: { include: { owner: { include: { profile: true } } } },
             },
         });
 
         for (const booking of upcomingBookings) {
-            // 👈 (က) ယခင်က ဤ Booking ID အတွက် သတိပေးချက် ပို့ပြီးပြီလား အရင်စစ်ဆေးပါမည်
             const alreadySent = await this.prisma.notification.findFirst({
                 where: {
                     bookingId: booking.id,
-                    type: `UPCOMING_REMINDER_${booking.status}`, // 👈 ဥပမာ - UPCOMING_REMINDER_PENDING သို့မဟုတ် UPCOMING_REMINDER_APPROVED
+                    type: `UPCOMING_REMINDER_${booking.status}`,
                 },
             });
 
-            // 👈 (ခ) ပို့ပြီးသားမှတ်တမ်းရှိပါက ကျော်သွားပါမည်
             if (alreadySent) {
                 this.logger.debug(`Booking ID ${booking.id} အတွက် သတိပေးချက် ပို့ပြီးသားဖြစ်၍ ကျော်သွားပါမည်။ ⏭️`);
                 continue;
             }
 
-            if (booking.user?.profile?.expo_push_token) {
-                const title = booking.status === 'APPROVED'
-                    ? 'ကားငှားရမ်းမှု သတိပေးချက် 🚗'
-                    : 'ခရီးစဉ်အတည်ပြုရန် သတိပေးချက် ⚠️';
+            if (booking.status === 'PENDING') {
+                const owner = booking.car?.owner;
+                if (!owner?.profile?.expo_push_token) {
+                    this.logger.warn(`⚠️ Booking ID ${booking.id} (PENDING) — Owner FCM Token မရှိသဖြင့် Notification မပို့နိုင်ပါ။`);
+                    continue;
+                }
+                const title = 'ခရီးစဉ်အတည်ပြုရန် သတိပေးချက် ⚠️';
+                const body = `မင်္ဂလာပါ ${owner.name || 'Owner'}၊ မနက်ဖြန်အတွက် ငှားရမ်းမည့်ခရီးစဉ်တစ်ခုသည် PENDING ဖြစ်နေဆဲဖြစ်ပါသဖြင့် အတည်ပြု/ငြင်းပယ်ပေးပါရန် သတိပေးအပ်ပါသည်ခင်ဗျာ။`;
 
-                const body = booking.status === 'APPROVED'
-                    ? `မင်္ဂလာပါ ${booking.user.name || 'User'}၊ မနက်ဖြန်တွင် သင်ငှားရမ်းထားသည့် ကားခရီးစဉ် စတင်တော့မည်ဖြစ်၍ သတိပေးအပ်ပါသည်ခင်ဗျာ။`
-                    : `မင်္ဂလာပါ ${booking.user.name || 'User'}၊ မနက်ဖြန်အတွက် သင်ငှားရမ်းထားသည့် ခရီးစဉ်သည် PENDING ဖြစ်နေဆဲဖြစ်ပါသဖြင့် အတည်ပြုပေးပါရန် သတိပေးအပ်ပါသည်ခင်ဗျာ။`;
+                await this.firebaseService.sendPushNotification(
+                    owner.profile.expo_push_token,
+                    title,
+                    body,
+                );
+
+                await this.prisma.notification.create({
+                    data: {
+                        title,
+                        body,
+                        type: 'UPCOMING_REMINDER_PENDING',
+                        userId: owner.id,
+                        bookingId: booking.id,
+                    },
+                });
+
+                this.logger.log(`🔔 Booking ID ${booking.id} (PENDING) — Owner ID ${owner.id} ဆီသို့ သတိပေးချက်ပို့ပြီးပါပြီ။`);
+            } else if (booking.status === 'APPROVED') {
+                if (!booking.user?.profile?.expo_push_token) {
+                    this.logger.warn(`⚠️ Booking ID ${booking.id} (APPROVED) — Renter FCM Token မရှိသဖြင့် Notification မပို့နိုင်ပါ။`);
+                    continue;
+                }
+                const title = 'ကားငှားရမ်းမှု သတိပေးချက် 🚗';
+                const body = `မင်္ဂလာပါ ${booking.user.name || 'User'}၊ မနက်ဖြန်တွင် သင်ငှားရမ်းထားသည့် ကားခရီးစဉ် စတင်တော့မည်ဖြစ်၍ သတိပေးအပ်ပါသည်ခင်ဗျာ။`;
 
                 await this.firebaseService.sendPushNotification(
                     booking.user.profile.expo_push_token,
@@ -104,20 +128,17 @@ export class CronService {
                     body,
                 );
 
-                // 👈 (ဂ) Notification အောင်မြင်စွာပို့ပြီးပါက Database တွင် သွားရောက်မှတ်တမ်းတင်ပါမည်
                 await this.prisma.notification.create({
                     data: {
                         title,
                         body,
-                        type: `UPCOMING_REMINDER_${booking.status}`, // 👈 ဥပမာ - UPCOMING_REMINDER_PENDING သို့မဟုတ် UPCOMING_REMINDER_APPROVED
+                        type: 'UPCOMING_REMINDER_APPROVED',
                         userId: booking.userId,
                         bookingId: booking.id,
                     },
                 });
 
-                this.logger.log(`🔔 Booking ID ${booking.id} (${booking.status}) အတွက် User ID ${booking.user.id} ဆီသို့ Notification ပို့ပြီး မှတ်တမ်းတင်ပါမည်။`);
-            } else {
-                this.logger.warn(`⚠️ Booking ID ${booking.id} ၏ User တွင် FCM Token မရှိသဖြင့် Notification မပို့နိုင်ပါ။`);
+                this.logger.log(`🔔 Booking ID ${booking.id} (APPROVED) — Renter ID ${booking.user.id} ဆီသို့ သတိပေးချက်ပို့ပြီးပါပြီ။`);
             }
         }
     }
