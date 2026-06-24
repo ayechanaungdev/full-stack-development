@@ -16,6 +16,7 @@ import { UploadsModule } from './uploads/uploads.module';
 import { DriversModule } from './drivers/drivers.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { MailModule } from './mail/mail.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -33,7 +34,8 @@ import { MailModule } from './mail/mail.module';
     MailModule,
     InquiriesModule,
     ScheduleModule.forRoot(),
-    CronModule, // 👈 Schedule စနစ်ကို ဖွင့်လိုက်ပါပြီ
+    CronModule,
+    NotificationsModule,
   ],
   controllers: [AppController], // Routes go here
   providers: [AppService], // Business logic goes here

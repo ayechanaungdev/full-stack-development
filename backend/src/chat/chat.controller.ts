@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards, Request, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, UseGuards, Request, ParseIntPipe } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { ChatService } from './chat.service';
 
@@ -7,15 +7,24 @@ import { ChatService } from './chat.service';
 export class ChatController {
     constructor(private readonly chatService: ChatService) { }
 
-    // Fetch chat history between the logged-in user and another user
+    @Get('conversations')
+    async getConversations(@Request() req: any) {
+        return this.chatService.getConversations(req.user.userId);
+    }
+
     @Get('history/:userId')
     async getHistory(
         @Param('userId', ParseIntPipe) chatPartnerId: number,
         @Request() req: any,
     ) {
-        const currentUser = req.user;
+        return this.chatService.getChatHistory(req.user.userId, chatPartnerId);
+    }
 
-        // Returns history between the current authenticated user and the requested partner ID
-        return this.chatService.getChatHistory(currentUser.userId, chatPartnerId);
+    @Patch('messages/read')
+    async markMessagesAsRead(
+        @Body() body: { partnerId: number },
+        @Request() req: any,
+    ) {
+        return this.chatService.markMessagesAsRead(req.user.userId, body.partnerId);
     }
 }

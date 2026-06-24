@@ -196,6 +196,15 @@ export class UsersService {
         return this.usersRepository.updateFcmToken(userId, fcmToken);
     }
 
+    async updatePushToken(userId: number, expoPushToken: string) {
+        await this.prisma.profile.upsert({
+            where: { id: userId },
+            create: { id: userId, expo_push_token: expoPushToken },
+            update: { expo_push_token: expoPushToken },
+        });
+        return { success: true };
+    }
+
     async findByRole(role: string) {
         const users = await this.prisma.user.findMany({
             where: { role: role as any },
