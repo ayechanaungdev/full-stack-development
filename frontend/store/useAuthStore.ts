@@ -260,8 +260,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   // OLD: signOut() called supabase.auth.signOut() + unsubscribeFromProfile()
   // NEW: calls backend POST /auth/logout + clears local tokens
   signOut: async () => {
+    const userId = get().user?.id;
     try {
+      if (userId) {
+        console.log('[Auth] Clearing push token for user', userId);
+        const res = await apiClient.patch(`/users/${userId}/push-token`, { expo_push_token: null });
+        console.log('[Auth] Push token cleared:', res.status);
+      }
       await apiClient.post("/auth/logout").catch(() => null);
+    } catch (err) {
+      console.log('[Auth] SignOut error (non-fatal):', err);
     } finally {
       socketService.disconnect();
       set({ session: null, user: null, profile: null, role: null, isLoading: false });

@@ -59,7 +59,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   updatePushToken(
     @Param('id', ParseIntPipe) id: number,
-    @Body('expo_push_token') expoPushToken: string,
+    @Body('expo_push_token') expoPushToken: string | null,
     @Request() req: any,
   ) {
     // Only allow users to update their own push token

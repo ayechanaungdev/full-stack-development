@@ -196,11 +196,12 @@ export class UsersService {
         return this.usersRepository.updateFcmToken(userId, fcmToken);
     }
 
-    async updatePushToken(userId: number, expoPushToken: string) {
+    async updatePushToken(userId: number, expoPushToken: string | null) {
+        const token = expoPushToken?.trim() || null;
         await this.prisma.profile.upsert({
             where: { id: userId },
-            create: { id: userId, expo_push_token: expoPushToken },
-            update: { expo_push_token: expoPushToken },
+            create: { id: userId, expo_push_token: token },
+            update: { expo_push_token: token },
         });
         return { success: true };
     }
