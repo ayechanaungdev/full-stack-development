@@ -8,14 +8,12 @@ export class FirebaseService {
 
   constructor() {
     try {
-      // serviceAccountKey.json ဖိုင်တည်ရှိရာလမ်းကြောင်းကို ယူပါမယ်
       const serviceAccountPath = path.resolve(
         process.cwd(),
         'serviceAccountKey.json',
       );
       const serviceAccount = require(serviceAccountPath);
 
-      // Firebase App ကို Initialize မလုပ်ရသေးရင် လုပ်ပါမယ်
       if (!admin.apps.length) {
         const storageBucket = `${serviceAccount.project_id}.appspot.com`;
         admin.initializeApp({
@@ -29,7 +27,6 @@ export class FirebaseService {
     }
   }
 
-  // Notification ပို့မယ့် Method
   async sendPushNotification(
     token: string,
     title: string,
@@ -37,22 +34,44 @@ export class FirebaseService {
     data?: any,
   ) {
     try {
+      if (token.startsWith('ExponentPushToken')) {
+        return await this.sendExpoPush(token, title, body, data);
+      }
       const message: admin.messaging.Message = {
-        notification: {
-          title,
-          body,
-        },
+        notification: { title, body },
         data: data || {},
-        token: token, // ဘယ်ဖုန်းကို ပို့မလဲဆိုတဲ့ FCM Token
+        token,
       };
-
       const response = await admin.messaging().send(message);
-      this.logger.log(`Successfully sent message: ${response}`);
+      this.logger.log(`Successfully sent FCM message: ${response}`);
       return response;
     } catch (error) {
       this.logger.error('Error sending push notification', error);
-      // တမင် throw မလုပ်ဘဲ ထားခဲ့လို့ရပါတယ်၊ သို့မှသာ notification မရောက်လို့ Booking ပျက်သွားတာမျိုး မဖြစ်မှာပါ
     }
+  }
+
+  private async sendExpoPush(
+    token: string,
+    title: string,
+    body: string,
+    data?: any,
+  ) {
+    const message = {
+      to: token,
+      title,
+      body,
+      data: data || {},
+      sound: 'default',
+      priority: 'high' as const,
+    };
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    });
+    const result = await response.json();
+    this.logger.log(`Expo push result: ${JSON.stringify(result)}`);
+    return result;
   }
 
   // Upload a file buffer to Firebase Storage

@@ -6,6 +6,7 @@ const SOCKET_URL = config.API_BASE_URL;
 
 class SocketService {
   private socket: Socket | null = null;
+  private tokenRefreshHandler: (() => Promise<string | null>) | null = null;
 
   get isConnected(): boolean {
     return this.socket?.connected ?? false;
@@ -13,6 +14,10 @@ class SocketService {
 
   getSocket(): Socket | null {
     return this.socket;
+  }
+
+  onTokenRefresh(handler: () => Promise<string | null>) {
+    this.tokenRefreshHandler = handler;
   }
 
   async connect() {
@@ -27,14 +32,22 @@ class SocketService {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 15000,
     });
 
-    this.socket.on('connect_error', (err) => {
+    this.socket.on('connect_error', async (err) => {
       if (err.message?.includes('Invalid token') || err.message?.includes('jwt expired')) {
-        this.disconnect();
+        let newToken = await AsyncStorage.getItem('accessToken');
+        if ((!newToken || newToken === token) && this.tokenRefreshHandler) {
+          newToken = await this.tokenRefreshHandler();
+        }
+        if (newToken && this.socket) {
+          this.socket.auth = { token: newToken };
+        } else {
+          this.disconnect();
+        }
       }
     });
   }

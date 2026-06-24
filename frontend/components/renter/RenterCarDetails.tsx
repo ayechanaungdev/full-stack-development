@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useRouter } from "expo-router";
@@ -102,42 +102,34 @@ export default function RenterCarDetails({ carId }: RenterCarDetailsProps) {
     const fetchCar = async () => {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from("cars")
-        .select(
-          `
-          id, car_number, has_ac,
-          brand, model, price_per_day, seats, car_type,
-          location, postal_code, status, owner_id,
-          car_images ( image_url ),
-          reviews ( rating )
-        `,
-        )
-        .eq("id", carId)
-        .single();
+      try {
+        const response = await apiClient.get(`/cars/${carId}`);
+        const data = response.data;
 
-      if (error) {
-        setLoading(false);
-        return;
-      }
+        if (data) {
+          const mapped = {
+            ...data,
+            price_per_day: data.pricePerDay,
+            owner_id: data.ownerId,
+            car_images: data.carImages,
+          };
 
-      if (data) {
-        const imgs = data.car_images?.map((img: any) => img.image_url) || [];
+          const imgs = mapped.car_images?.map((img: any) => img.image_url) || [];
+          setImages(imgs.length ? imgs : []);
 
-        setImages(imgs.length ? imgs : []);
+          const ratings = data.reviews?.map((r: any) => r.rating) || [];
 
-        const ratings = data.reviews?.map((r: any) => r.rating) || [];
+          const avg =
+            ratings.length > 0
+              ? ratings.reduce((a: number, b: number) => a + b, 0) /
+                ratings.length
+              : null;
 
-        const avg =
-          ratings.length > 0
-            ? ratings.reduce((a: number, b: number) => a + b, 0) /
-              ratings.length
-            : null;
-
-        setAvgRating(avg);
-        setReviewCount(ratings.length);
-        setCar(data);
-      }
+          setAvgRating(avg);
+          setReviewCount(ratings.length);
+          setCar(mapped);
+        }
+      } catch {}
       setLoading(false);
     };
     fetchCar();
@@ -159,45 +151,27 @@ export default function RenterCarDetails({ carId }: RenterCarDetailsProps) {
     }
   };
 
-  // Fetch Booking Data
+  // Compute unavailable dates from embedded booking data
   useEffect(() => {
-    if (!car) return;
+    if (!car || !car.bookings) return;
 
-    // Only block confirmed bookings
-    const fetchBookings = async () => {
-      const { data, error } = await supabase
-        .from("bookings")
-        .select("start_date, end_date, status")
-        .eq("car_id", car.id)
-        .in("status", ["approved", "completed"]);
+    const dates: string[] = [];
 
-      if (error) {
-        return;
+    car.bookings.forEach((booking: any) => {
+      const start = new Date(booking.startDate);
+      const end = new Date(booking.endDate);
+
+      for (
+        let d = new Date(start);
+        d <= end;
+        d = new Date(d.setDate(d.getDate() + 1))
+      ) {
+        const formatted = d.toISOString().split("T")[0];
+        if (!dates.includes(formatted)) dates.push(formatted);
       }
+    });
 
-      const dates: string[] = [];
-
-      data.forEach((booking: any) => {
-        const start = new Date(booking.start_date);
-        const end = new Date(booking.end_date);
-
-        // Iterate through every day between start_date and end_date
-        for (
-          let d = new Date(start);
-          d <= end;
-          d = new Date(d.setDate(d.getDate() + 1))
-        ) {
-          // Format to 'YYYY-MM-DD'
-          const formatted = d.toISOString().split("T")[0];
-          // Add unique dates to the unavailable list
-          if (!dates.includes(formatted)) dates.push(formatted);
-        }
-      });
-
-      setUnavailableDates(dates);
-    };
-
-    fetchBookings();
+    setUnavailableDates(dates);
   }, [car]);
 
   // Combine location and postal code township name
@@ -475,7 +449,7 @@ export default function RenterCarDetails({ carId }: RenterCarDetailsProps) {
           // Android shadow
           elevation: 8,
         }}
-        onPress={() => router.push(`/chat/${car.owner_id}`)}
+        onPress={() => router.push(`/(protected)/chat/${car.owner_id}` as any)}
       >
         <FabIcon as={MessageSquareText} className="w-8 h-8" />
       </Fab>

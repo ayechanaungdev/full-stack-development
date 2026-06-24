@@ -30,8 +30,10 @@
 // ================================================================
 // NEW: Backend Auth Store (active)
 // ================================================================
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { tokenManager, apiClient } from "@/lib/axios";
 import { socketService } from "@/lib/socket";
+import config from "@/lib/config";
 import { create } from "zustand";
 
 export interface Profile {
@@ -128,6 +130,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       tokenManager.onAuthFailed(() => {
         get().signOut();
       });
+      socketService.onTokenRefresh(async () => {
+        try {
+          const refreshToken = await AsyncStorage.getItem('refreshToken');
+          if (!refreshToken) return null;
+          const response = await fetch(`${config.API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${refreshToken}` },
+          });
+          if (!response.ok) return null;
+          const data = await response.json();
+          await tokenManager.setTokens(data.accessToken, data.refreshToken);
+          return data.accessToken;
+        } catch {
+          return null;
+        }
+      });
     }
     if (get().isInitialized) return;
     try {
@@ -207,6 +225,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       await saveToStorage({ session, user: profile });
       await tokenManager.setTokens(accessToken, refreshToken);
+      socketService.connect();
     } catch (error: any) {
       console.log("[AUTH] Login error:", error?.response?.status, error?.response?.data, error?.message);
       const message = error?.response?.data?.message || error?.message || "Login failed";

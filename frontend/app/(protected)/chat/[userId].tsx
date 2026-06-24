@@ -64,6 +64,8 @@ export default function ChatScreen() {
     subscribeToMessages,
     clearMessages,
     setActivePartnerId,
+    typingUsers,
+    emitTyping,
   } = useChatStore();
   const [inputText, setInputText] = useState("");
   const [partnerName, setPartnerName] = useState("");
@@ -77,6 +79,8 @@ export default function ChatScreen() {
   });
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partnerTyping = otherUserId ? typingUsers.has(otherUserId) : false;
 
   useEffect(() => {
     if (!otherUserId) return;
@@ -103,7 +107,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (currentUser?.id && otherUserId) {
       const markConversationRead = async () => {
-        const messageReadCount = await markAsRead(currentUser.id, otherUserId);
+        const messageReadCount = await markAsRead(otherUserId);
 
         let notificationReadCount = 0;
         try {
@@ -121,10 +125,7 @@ export default function ChatScreen() {
               if (!oldData) return oldData;
               return {
                 ...oldData,
-                notifications: Math.max(
-                  0,
-                  oldData.notifications - notificationReadCount,
-                ),
+                notifications: Math.max(0, oldData.notifications - notificationReadCount),
                 messages: Math.max(0, oldData.messages - messageReadCount),
               };
             },
@@ -134,9 +135,9 @@ export default function ChatScreen() {
 
       setActivePartnerId(otherUserId);
       clearMessages();
-      fetchMessages(currentUser.id, otherUserId);
+      fetchMessages(String(currentUser.id), otherUserId);
       markConversationRead();
-      const unsubscribe = subscribeToMessages(currentUser.id);
+      const unsubscribe = subscribeToMessages();
       return () => {
         unsubscribe();
         clearMessages();
@@ -160,29 +161,15 @@ export default function ChatScreen() {
   );
 
   const handleSend = async () => {
-    if (!inputText.trim() || !currentUser?.id || !otherUserId) return;
-    // 2. Check Network Connection
+    if (!inputText.trim() || !otherUserId) return;
     const state = await NetInfo.fetch();
     if (!state.isConnected) {
-      Alert.alert(
-        "No Internet Connection",
-        "Please check your network and try again.",
-        [{ text: "OK" }],
-      );
-      // Return early WITHOUT clearing inputText
+      Alert.alert("No Internet Connection", "Please check your network and try again.", [{ text: "OK" }]);
       return;
     }
     const content = inputText.trim();
-
-    try {
-      // Clear the input only AFTER confirming we are online
-      setInputText("");
-      await sendMessage(currentUser.id, otherUserId, content);
-    } catch {
-      // If the database insert fails (e.g., server down), put the text back
-      setInputText(content);
-      Alert.alert("Error", "Failed to send message. Please try again.");
-    }
+    setInputText("");
+    sendMessage(otherUserId, content);
   };
 
   return (
@@ -258,7 +245,7 @@ export default function ChatScreen() {
                 }}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item, index }) => {
-                  const isMine = item.sender_id === currentUser?.id;
+                  const isMine = item.sender_id === String(currentUser?.id);
                   const showDateSeparator =
                     index === reversedMessages.length - 1 ||
                     new Date(
@@ -335,6 +322,15 @@ export default function ChatScreen() {
             )}
           </Box>
 
+          {/* ── Typing indicator ── */}
+          {partnerTyping && (
+            <Box className="px-4 py-1">
+              <Text size="xs" className="text-typography-400 italic">
+                {partnerName || "User"} is typing...
+              </Text>
+            </Box>
+          )}
+
           {/* ── Input bar ── */}
           <HStack
             space="sm"
@@ -348,7 +344,15 @@ export default function ChatScreen() {
                 placeholder="Type a message ..."
                 placeholderTextColor="#aaa"
                 value={inputText}
-                onChangeText={setInputText}
+                onChangeText={(text) => {
+                  setInputText(text);
+                  if (!otherUserId) return;
+                  if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+                  emitTyping(otherUserId, text.length > 0);
+                  typingTimerRef.current = setTimeout(() => {
+                    emitTyping(otherUserId, false);
+                  }, 2000);
+                }}
                 multiline
                 onSubmitEditing={handleSend}
                 returnKeyType="send"
