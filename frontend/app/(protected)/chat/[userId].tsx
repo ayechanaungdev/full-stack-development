@@ -11,7 +11,7 @@ import { Input, InputField } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useChatStore } from "@/store/useChatStore";
 import NetInfo from "@react-native-community/netinfo";
@@ -81,22 +81,21 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!otherUserId) return;
     const getPartner = async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("full_name, avatar_url, phone, location, postal_code")
-        .eq("id", otherUserId)
-        .single();
-      if (data?.full_name) setPartnerName(data.full_name);
-      if (data?.avatar_url) setPartnerAvatar(data.avatar_url);
-      if (data) {
-        setProfile({
-          name: data.full_name ?? "",
-          phone: data.phone ?? "",
-          location: data.location ?? "",
-          postal_code: data.postal_code ?? "",
-          avatarUrl: data.avatar_url ?? "",
-        });
-      }
+      try {
+        const response = await apiClient.get(`/users/${Number(otherUserId)}`);
+        const data = response.data;
+        if (data?.full_name) setPartnerName(data.full_name);
+        if (data?.avatar_url) setPartnerAvatar(data.avatar_url);
+        if (data) {
+          setProfile({
+            name: data.full_name ?? "",
+            phone: data.phone ?? "",
+            location: data.location ?? "",
+            postal_code: data.postal_code ?? "",
+            avatarUrl: data.avatar_url ?? "",
+          });
+        }
+      } catch {}
     };
     getPartner();
   }, [otherUserId]);
@@ -106,16 +105,14 @@ export default function ChatScreen() {
       const markConversationRead = async () => {
         const messageReadCount = await markAsRead(currentUser.id, otherUserId);
 
-        const { data: updatedNotifications } = await supabase
-          .from("notifications")
-          .update({ is_read: true })
-          .select("id")
-          .eq("receiver_id", currentUser.id)
-          .eq("sender_id", otherUserId)
-          .eq("type", "message")
-          .eq("is_read", false);
-
-        const notificationReadCount = updatedNotifications?.length ?? 0;
+        let notificationReadCount = 0;
+        try {
+          const notiResponse = await apiClient.patch('/notifications/read-by-sender', {
+            senderId: Number(otherUserId),
+            type: 'message',
+          });
+          notificationReadCount = notiResponse.data?.count ?? 0;
+        } catch {} 
 
         if (notificationReadCount > 0 || messageReadCount > 0) {
           queryClient.setQueryData(

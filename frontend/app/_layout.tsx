@@ -8,9 +8,9 @@ import "../global.css"; // Must be the very first import for NativeWind v4
 
 import { GluestackUIProvider } from "@/components/ui/gluestack-ui-provider";
 import registerForPushNotificationsAsync from "@/hooks/get-push-noti-token";
+import { apiClient } from "@/lib/axios";
 import { queryClient } from "@/lib/queryClient";
-import { supabase } from "@/lib/supabase";
-import { useAuthStore } from "@/store/useAuthStore"; // Import your store
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   markNotificationIdProcessed,
   setupBadgeRealtime,
@@ -105,10 +105,7 @@ export default function RootLayout() {
             const data = response.notification.request.content.data;
             const notification_id = data?.notification_id;
             if (notification_id) {
-              await supabase
-                .from("notifications")
-                .update({ is_read: true })
-                .eq("id", notification_id);
+              await apiClient.patch(`/notifications/${notification_id}/read`).catch(() => {});
             }
 
             setTimeout(() => {

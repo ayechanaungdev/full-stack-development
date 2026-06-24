@@ -31,6 +31,7 @@
 // NEW: Backend Auth Store (active)
 // ================================================================
 import { tokenManager, apiClient } from "@/lib/axios";
+import { socketService } from "@/lib/socket";
 import { create } from "zustand";
 
 export interface Profile {
@@ -143,6 +144,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isLoading: false,
           isInitialized: true,
         });
+        socketService.connect();
       } else {
         console.log('[Auth] No stored session found');
         set({ isLoading: false, isInitialized: true });
@@ -170,6 +172,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await tokenManager.setTokens(session.accessToken, session.refreshToken);
       set({ session, user, profile: user, role: user.role, isLoading: false });
       await saveToStorage({ session, user });
+      socketService.connect();
     } else {
       set({ session, isLoading: false });
     }
@@ -241,6 +244,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await apiClient.post("/auth/logout").catch(() => null);
     } finally {
+      socketService.disconnect();
       set({ session: null, user: null, profile: null, role: null, isLoading: false });
       await removeFromStorage();
       await tokenManager.clearTokens();
