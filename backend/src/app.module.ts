@@ -17,6 +17,7 @@ import { DriversModule } from './drivers/drivers.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { MailModule } from './mail/mail.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ReviewsModule } from './reviews/reviews.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ScheduleModule.forRoot(),
     CronModule,
     NotificationsModule,
+    ReviewsModule,
   ],
   controllers: [AppController], // Routes go here
   providers: [AppService], // Business logic goes here

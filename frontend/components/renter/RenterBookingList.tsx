@@ -11,7 +11,7 @@ import { ScrollView } from "@/components/ui/scroll-view";
 import { Spinner } from "@/components/ui/spinner";
 import { VStack } from "@/components/ui/vstack";
 
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { CARD_SHADOW } from "@/utils/dashboardHelpers";
 
 import Entypo from "@expo/vector-icons/Entypo";
@@ -184,69 +184,40 @@ export default function RenterBookingList({ renterId }: Props) {
           setLoadingMore(true);
         }
 
-        const from = pageNumber * PAGE_SIZE;
-        const to = from + PAGE_SIZE - 1;
-
-        let query = supabase
-          .from("bookings")
-          .select(
-            `
-          id,
-          status,
-          total_price,
-          start_date,
-          pickup_location,
-          pickup_time,
-          dropoff_location,
-          dropoff_time,
-          end_date,
-          car:cars (
-            brand,
-            model,
-            car_images (
-              image_url,
-              is_primary
-            )
-          )
-        `,
-            { count: "exact" },
-          )
-          .eq("customer_id", renterId)
-          .order("start_date", { ascending: false })
-          .range(from, to);
+        const params: any = {
+          page: pageNumber + 1,
+          limit: PAGE_SIZE,
+        };
 
         if (selectedStatus !== "All") {
-          query = query.eq("status", selectedStatus.toLowerCase());
+          params.status = selectedStatus.toUpperCase();
         }
 
         if (filterMonth !== null && filterYear !== null) {
-          const startDate = new Date(filterYear, filterMonth, 1);
-          const endDate = new Date(filterYear, filterMonth + 1, 0, 23, 59, 59);
-          query = query
-            .gte("start_date", startDate.toISOString())
-            .lte("start_date", endDate.toISOString());
+          params.month = filterMonth;
+          params.year = filterYear;
         }
 
-        const { data, error, count } = await query;
-        if (error) throw error;
+        const response = await apiClient.get("/bookings", { params });
+        const { data, total, page } = response.data;
 
-        setTotalCount(count || 0);
+        setTotalCount(total || 0);
 
         const mappedData = (data || []).map((item: any) => {
+          const carImages = item.car?.carImages || [];
           const primaryImage =
-            item.car?.car_images?.find((img: any) => img.is_primary) ||
-            item.car?.car_images?.[0];
+            carImages.find((img: any) => img.is_primary) || carImages[0];
 
           return {
-            id: item.id,
-            status: item.status,
-            total_price: item.total_price,
-            start_date: item.start_date,
-            pickup_location: item.pickup_location ?? "Not specified",
-            pickup_time: item.pickup_time,
-            dropoff_location: item.dropoff_location ?? "Not specified",
-            dropoff_time: item.dropoff_time,
-            end_date: item.end_date,
+            id: String(item.id),
+            status: item.status?.toLowerCase() || "",
+            total_price: item.totalPrice,
+            start_date: item.startDate?.split("T")[0] || "",
+            pickup_location: item.pickupLocation ?? "Not specified",
+            pickup_time: item.pickupTime,
+            dropoff_location: item.dropoffLocation ?? "Not specified",
+            dropoff_time: item.dropoffTime,
+            end_date: item.endDate?.split("T")[0] || "",
             brand: item.car?.brand || "",
             model: item.car?.model || "",
             image_url: primaryImage?.image_url || "",
@@ -265,11 +236,11 @@ export default function RenterBookingList({ renterId }: Props) {
           });
         }
 
-        const loadedItems = from + mappedData.length;
-        setHasMore(loadedItems < (count || 0));
+        const loadedItems = pageNumber * PAGE_SIZE + mappedData.length;
+        setHasMore(loadedItems < (total || 0));
       } catch (error: any) {
         console.error("Fetch bookings error:", error);
-        setFetchError(error?.message || "Failed to load bookings");
+        setFetchError(error?.response?.data?.message || error?.message || "Failed to load bookings");
       } finally {
         setLoading(false);
         setRefreshing(false);

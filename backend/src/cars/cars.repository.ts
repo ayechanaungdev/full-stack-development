@@ -17,7 +17,7 @@ export class CarsRepository extends BaseRepository<any> {
         carImages: { select: { id: true, image_url: true, is_primary: true } },
         reviews: { select: { rating: true } },
         bookings: {
-          where: { status: { in: ['APPROVED', 'COMPLETED'] } },
+          where: { status: { in: ['PENDING', 'APPROVED', 'COMPLETED'] } },
           select: { startDate: true, endDate: true, status: true },
         },
       },

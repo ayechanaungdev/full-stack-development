@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Request, Patch, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Request, Patch, Param, Query } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -30,9 +30,28 @@ export class BookingsController {
     }
 
     @Get()
-    findAll(@Request() req: any) {
-        // Pass the authenticated user info to the service for role-based filtering
-        return this.bookingsService.findAll(req.user);
+    findAll(
+        @Request() req: any,
+        @Query('status') status?: string,
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+        @Query('month') month?: string,
+        @Query('year') year?: string,
+        @Query('search') search?: string,
+    ) {
+        return this.bookingsService.findAll(req.user, {
+            status,
+            page: page ? parseInt(page, 10) : undefined,
+            limit: limit ? parseInt(limit, 10) : undefined,
+            month: month ? parseInt(month, 10) : undefined,
+            year: year ? parseInt(year, 10) : undefined,
+            search,
+        });
+    }
+
+    @Get(':id')
+    findOne(@Param('id') id: string, @Request() req: any) {
+        return this.bookingsService.findOne(+id, req.user);
     }
 
     @Patch(':id/status')
@@ -43,4 +62,8 @@ export class BookingsController {
         return this.bookingsService.updateStatus(+id, status);
     }
 
+    @Patch(':id/read')
+    markAsRead(@Param('id') id: string, @Request() req: any) {
+        return this.bookingsService.markAsRead(+id, req.user.userId);
+    }
 }

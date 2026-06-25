@@ -1,4 +1,4 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { BookingsRepository } from './bookings.repository';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { FirebaseService } from 'src/firebase/firebase.service';
@@ -17,25 +17,39 @@ export class BookingsService {
     async create(createBookingDto: CreateBookingDto) {
         const { carId, startDate, endDate } = createBookingDto;
 
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
         const existingBooking = await this.bookingsRepository.findOverlappingBooking(
             carId,
-            new Date(startDate),
-            new Date(endDate)
+            start,
+            end
         );
 
         if (existingBooking) {
             throw new ConflictException('This car is already booked for the selected dates!');
         }
 
-        const newBooking = await this.bookingsRepository.createWithRelations(createBookingDto);
-        const carOwnerId = newBooking.car?.ownerId;
-
-        // Send push notification to customer
-        if (newBooking.user?.profile?.expo_push_token) {
-            const title = 'Booking Confirmed!';
-            const body = `Your booking for ${newBooking.car.brand} ${newBooking.car.model} is successful.`;
-            this.firebaseService.sendPushNotification(newBooking.user.profile.expo_push_token, title, body);
+        // Get ownerId from car if not provided
+        if (!createBookingDto.ownerId) {
+            const car = await this.prisma.car.findUnique({
+                where: { id: carId },
+                select: { ownerId: true },
+            });
+            if (car && car.ownerId !== null) {
+                createBookingDto.ownerId = car.ownerId;
+            }
         }
+
+        // Convert date strings to Date objects for Prisma
+        const bookingData = {
+            ...createBookingDto,
+            startDate: start,
+            endDate: end,
+        };
+
+        const newBooking = await this.bookingsRepository.createWithRelations(bookingData);
+        const carOwnerId = newBooking.car?.ownerId;
 
         // Create notification + Socket.IO emit for car owner
         if (carOwnerId) {
@@ -75,15 +89,91 @@ export class BookingsService {
         return newBooking;
     }
 
-    async findAll(user: { userId: number; role: string }) {
-        if (user.role === 'ADMIN') {
-            return this.bookingsRepository.findAll();
+    async findAll(
+        user: { userId: number; role: string },
+        filters?: {
+            status?: string;
+            page?: number;
+            limit?: number;
+            month?: number;
+            year?: number;
+            search?: string;
+        },
+    ) {
+        const page = filters?.page || 1;
+        const limit = filters?.limit || 10;
+        const skip = (page - 1) * limit;
+
+        const where: any = {};
+
+        if (user.role !== 'ADMIN') {
+            where.userId = user.userId;
         }
-        return this.bookingsRepository.findByUserId(user.userId);
+
+        if (filters?.status) {
+            where.status = filters.status.toUpperCase();
+        }
+
+        if (filters?.month !== undefined && filters?.year !== undefined) {
+            const startDate = new Date(filters.year, filters.month, 1);
+            const endDate = new Date(filters.year, filters.month + 1, 0, 23, 59, 59);
+            where.startDate = {
+                gte: startDate,
+                lte: endDate,
+            };
+        }
+
+        if (filters?.search) {
+            where.OR = [
+                { id: { equals: isNaN(Number(filters.search)) ? undefined : Number(filters.search) } },
+            ];
+        }
+
+        const [data, total] = await Promise.all([
+            this.bookingsRepository.findAllPaginated(where, skip, limit),
+            this.bookingsRepository.count(where),
+        ]);
+
+        return { data, total, page, limit };
+    }
+
+    async findOne(id: number, user: { userId: number; role: string }) {
+        const booking = await this.bookingsRepository.findWithDetails(id);
+
+        if (!booking) {
+            throw new NotFoundException('Booking not found');
+        }
+
+        if (user.role !== 'ADMIN' && booking.userId !== user.userId) {
+            throw new ForbiddenException('Access denied');
+        }
+
+        return booking;
+    }
+
+    async markAsRead(id: number, userId: number) {
+        const booking = await this.prisma.booking.findUnique({
+            where: { id },
+            select: { userId: true, ownerId: true },
+        });
+
+        if (!booking) {
+            throw new NotFoundException('Booking not found');
+        }
+
+        if (booking.userId !== userId && booking.ownerId !== userId) {
+            throw new ForbiddenException('Access denied');
+        }
+
+        return this.prisma.booking.update({
+            where: { id },
+            data: { isRead: true },
+        });
     }
 
     async updateStatus(id: number, status: string) {
-        const updatedBooking = await this.bookingsRepository.updateStatus(id, status);
+        const normalizedStatus = status.toUpperCase();
+        const updatedBooking = await this.bookingsRepository.updateStatus(id, normalizedStatus);
 
         // Notify the customer
         if (updatedBooking.user) {

@@ -8,9 +8,8 @@ import { ScrollView } from "@/components/ui/scroll-view";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
-import { adjustBadgeCount } from "@/store/useBadgeStore";
 import { CARD_SHADOW } from "@/utils/dashboardHelpers";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Entypo from "@expo/vector-icons/Entypo";
@@ -142,31 +141,15 @@ const RenterBookingDetails = ({ bookingId }: Props) => {
     const markBookingNotificationRead = async () => {
       if (!userId || !bookingId) return;
 
-      const { data: updatedBookings } = await supabase
-        .from("bookings")
-        .update({ is_read: true })
-        .select("id")
-        .eq("id", bookingId)
-        .eq("is_read", false);
+      try {
+        await apiClient.patch(`/bookings/${bookingId}/read`);
+      } catch {}
 
-      const bookingReadCount = updatedBookings?.length ?? 0;
-      if (bookingReadCount > 0) {
-        adjustBadgeCount(userId, "bookings", -bookingReadCount);
-      }
-
-      const { data: updatedNotifications } = await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .select("id")
-        .eq("receiver_id", userId)
-        .eq("reference_id", bookingId)
-        .eq("type", "booking")
-        .eq("is_read", false);
-
-      const notificationReadCount = updatedNotifications?.length ?? 0;
-      if (notificationReadCount > 0) {
-        adjustBadgeCount(userId, "notifications", -notificationReadCount);
-      }
+      try {
+        await apiClient.patch("/notifications/read-many", {
+          ids: [Number(bookingId)],
+        });
+      } catch {}
     };
 
     markBookingNotificationRead();
@@ -176,70 +159,39 @@ const RenterBookingDetails = ({ bookingId }: Props) => {
   const fetchDetail = async () => {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("bookings")
-      .select(
-        `
-        id,
-        status,
-        customer_id,
-        car_id,
-        total_price,
-        start_date,
-        end_date,
-        pickup_time,
-        dropoff_time,
-        pickup_location,
-        dropoff_location,
-        note,
-        car:cars (
-          brand,
-          model,
-          car_number,
-          price_per_day,
-          owner_id,
-          car_images (
-            image_url,
-            is_primary
-          )
-        )
-      `,
-      )
-      .eq("id", bookingId)
-      .single();
+    try {
+      const response = await apiClient.get(`/bookings/${bookingId}`);
+      const item = response.data;
 
-    if (error) {
-      console.error("Fetch error:", error.message);
-      setLoading(false);
-      return;
+      const carImages = item.car?.carImages || [];
+      const primaryImage =
+        carImages.find((img: any) => img.is_primary) || carImages[0];
+
+      setData({
+        id: String(item.id),
+        status: item.status?.toLowerCase() || "",
+        customer_id: String(item.userId),
+        car_id: String(item.carId),
+        total_price: item.totalPrice,
+        start_date: item.startDate?.split("T")[0] || "",
+        end_date: item.endDate?.split("T")[0] || "",
+        pickup_time: item.pickupTime,
+        dropoff_time: item.dropoffTime,
+        pickup_location: item.pickupLocation || "",
+        dropoff_location: item.dropoffLocation || "",
+        note: item.note || "",
+        car: {
+          brand: item.car?.brand || "",
+          model: item.car?.model || "",
+          car_number: item.car?.car_number || "",
+          price_per_day: item.car?.pricePerDay || 0,
+          owner_id: item.car?.ownerId,
+        },
+        image_url: primaryImage?.image_url || "",
+      });
+    } catch (error: any) {
+      console.error("Fetch error:", error?.response?.data?.message || error?.message);
     }
-
-    const primaryImage =
-      (data.car as any)?.car_images?.find((img: any) => img.is_primary) ||
-      (data.car as any)?.car_images?.[0];
-
-    setData({
-      id: data.id,
-      status: data.status,
-      customer_id: data.customer_id,
-      car_id: data.car_id,
-      total_price: data.total_price,
-      start_date: data.start_date,
-      end_date: data.end_date,
-      pickup_time: data.pickup_time,
-      dropoff_time: data.dropoff_time,
-      pickup_location: data.pickup_location,
-      dropoff_location: data.dropoff_location,
-      note: data.note,
-      car: {
-        brand: (data.car as any)?.brand,
-        model: (data.car as any)?.model,
-        car_number: (data.car as any)?.car_number,
-        price_per_day: (data.car as any)?.price_per_day,
-        owner_id: (data.car as any)?.owner_id,
-      },
-      image_url: primaryImage?.image_url || "",
-    });
 
     setLoading(false);
   };
@@ -258,38 +210,36 @@ const RenterBookingDetails = ({ bookingId }: Props) => {
         {
           text: "OK",
           onPress: async () => {
-            const { error } = await supabase
-              .from("bookings")
-              .update({ status: "cancelled" })
-              .eq("id", bookingId);
+            try {
+              await apiClient.patch(`/bookings/${bookingId}/status`, {
+                status: "CANCELLED",
+              });
 
-            if (error) {
+              // Invalidate queries to refresh lists
+              queryClient.invalidateQueries({ queryKey: ["owner_bookings"] });
+              queryClient.invalidateQueries({ queryKey: ["renter_bookings"] });
+
+              setAlertData({
+                title: "Success",
+                message: "Booking cancelled successfully",
+                type: "success",
+                actions: [
+                  {
+                    text: "OK",
+                    onPress: () => fetchDetail(),
+                  },
+                ],
+              });
+              setAlertVisible(true);
+            } catch (error: any) {
               setAlertData({
                 title: "Error",
-                message: error.message,
+                message: error?.response?.data?.message || error?.message || "Failed to cancel",
                 type: "error",
                 actions: [{ text: "OK" }],
               });
               setAlertVisible(true);
-              return;
             }
-
-            // Invalidate queries to refresh lists
-            queryClient.invalidateQueries({ queryKey: ["owner_bookings"] });
-            queryClient.invalidateQueries({ queryKey: ["renter_bookings"] });
-
-            setAlertData({
-              title: "Success",
-              message: "Booking cancelled successfully",
-              type: "success",
-              actions: [
-                {
-                  text: "OK",
-                  onPress: () => fetchDetail(),
-                },
-              ],
-            });
-            setAlertVisible(true);
           },
         },
       ],
@@ -308,27 +258,13 @@ const RenterBookingDetails = ({ bookingId }: Props) => {
     setShowRatingError(false);
     setSubmitting(true);
 
-    const { error } = await supabase.from("reviews").insert({
-      car_id: data?.car_id,
-      user_id: data?.customer_id,
-      rating: rating,
-      comment: comment,
-    });
-
-    setSubmitting(false);
-    if (error) {
-      setAlertData({
-        title: "Error",
-        message: error.message,
-        type: "error",
-        actions: [
-          {
-            text: "OK",
-          },
-        ],
+    try {
+      await apiClient.post("/reviews", {
+        carId: Number(data?.car_id),
+        rating,
+        comment,
       });
-      setAlertVisible(true);
-    } else {
+
       setAlertData({
         title: "Success",
         message: "Review submitted successfully",
@@ -346,7 +282,17 @@ const RenterBookingDetails = ({ bookingId }: Props) => {
         ],
       });
       setAlertVisible(true);
+    } catch (error: any) {
+      setAlertData({
+        title: "Error",
+        message: error?.response?.data?.message || error?.message || "Failed to submit review",
+        type: "error",
+        actions: [{ text: "OK" }],
+      });
+      setAlertVisible(true);
     }
+
+    setSubmitting(false);
   };
 
   // review stars
