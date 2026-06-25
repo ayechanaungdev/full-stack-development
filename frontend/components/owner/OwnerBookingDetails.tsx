@@ -3,7 +3,7 @@ import { Button, ButtonText } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { HStack } from "@/components/ui/hstack";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
 import { CARD_SHADOW } from "@/utils/dashboardHelpers";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,7 +13,6 @@ import { useNavigation, useRouter } from "expo-router";
 
 import * as Clipboard from "expo-clipboard";
 
-import { adjustBadgeCount } from "@/store/useBadgeStore";
 import {
   ArrowDownCircleIcon,
   CarFrontIcon,
@@ -170,7 +169,6 @@ function getBookingStatusInfo(status: BookingStatus) {
  * @param bookingId - The UUID of the booking to display
  */
 const OwnerBookingDetails = ({ bookingId }: Props) => {
-  const ownerId = useAuthStore((s) => s.profile?.id);
   const currentUserId = useAuthStore((s) => s.session?.user?.id);
   const role = useAuthStore((s) => s.role);
   const queryClient = useQueryClient();
@@ -276,132 +274,136 @@ const OwnerBookingDetails = ({ bookingId }: Props) => {
   }, [drivers, booking]);
 
   /**
-   * Validates if a string is a valid UUID format.
-   * @param value - The string to validate
-   * @returns True if the string matches UUID format, false otherwise
-   */
-  const isUuid = (value: string): boolean => {
-    const uuidRegex =
-      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
-    return uuidRegex.test(value);
-  };
-
-  /**
    * Loads booking details and related data (car, customer, driver) from Supabase.
    * Also fetches available drivers and marks those with conflicting bookings as blocked.
    */
   const loadBooking = useCallback(async () => {
     if (!bookingId) return;
 
-    if (!isUuid(bookingId)) {
-      setError("Invalid booking ID format. Please use a valid UUID.");
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
     try {
-      const { data: bookingData, error: bookingError } = await supabase
-        .from("bookings")
-        .select(
-          `*,
-          car:cars(id,brand,model,car_type,seats,car_number,price_per_day,location,postal_code,owner_id,car_images(id,image_url)),
-          customer:profiles!bookings_customer_id_fkey(id,full_name,phone,avatar_url,location,postal_code,nrc),
-          driver:drivers(id,name,phone,photo_url,status,location,postal_code),
-          note,
-          is_read`,
-        )
-        .eq("id", bookingId)
-        .maybeSingle();
+      const response = await apiClient.get(`/bookings/${bookingId}`);
+      const bookingData = response.data;
 
-      if (bookingError) {
-        setError("Booking not found.");
-        setBooking(null);
-        return;
-      }
       if (!bookingData) {
         setError("Booking not found.");
         setBooking(null);
         return;
       }
 
-      if (bookingData.car?.owner_id !== ownerId) {
-        setError("Unauthorized: this booking does not belong to your cars.");
-        setBooking(null);
-        return;
-      }
+      const profile = bookingData.user?.profile || {};
 
       setBooking({
-        id: bookingData.id,
-        status: bookingData.status as BookingStatus,
-        start_date: bookingData.start_date,
-        end_date: bookingData.end_date,
-        pickup_time: formatTo12Hour(bookingData.pickup_time),
-        dropoff_time: formatTo12Hour(bookingData.dropoff_time ?? undefined),
-        pickup_location: bookingData.pickup_location,
-        dropoff_location: bookingData.dropoff_location,
-        total_price: Number(bookingData.total_price),
-        created_at: bookingData.created_at,
-        car_id: bookingData.car_id,
-        driver_id: bookingData.driver_id,
-        customer_id: bookingData.customer_id,
-        car: bookingData.car,
-        customer: bookingData.customer,
-        driver: bookingData.driver,
+        id: String(bookingData.id),
+        status: (bookingData.status?.toLowerCase() || "pending") as BookingStatus,
+        start_date: bookingData.startDate?.split("T")[0] || "",
+        end_date: bookingData.endDate?.split("T")[0] || "",
+        pickup_time: formatTo12Hour(bookingData.pickupTime),
+        dropoff_time: formatTo12Hour(bookingData.dropoffTime ?? undefined),
+        pickup_location: bookingData.pickupLocation,
+        dropoff_location: bookingData.dropoffLocation,
+        total_price: Number(bookingData.totalPrice),
+        created_at: bookingData.createdAt,
+        car_id: String(bookingData.carId),
+        driver_id: bookingData.driverId ? String(bookingData.driverId) : null,
+        customer_id: String(bookingData.userId),
+        car: bookingData.car
+          ? {
+              id: String(bookingData.car.id),
+              brand: bookingData.car.brand,
+              model: bookingData.car.model,
+              seats: bookingData.car.seats,
+              car_type: bookingData.car.car_type,
+              car_number: bookingData.car.car_number,
+              postal_code: bookingData.car.postal_code,
+              price_per_day: bookingData.car.pricePerDay,
+              location: bookingData.car.location,
+              owner_id: String(bookingData.car.ownerId),
+              car_images: (bookingData.car.carImages || []).map(
+                (img: any) => ({
+                  id: String(img.id),
+                  image_url: img.image_url,
+                }),
+              ),
+            }
+          : undefined,
+        customer: {
+          id: String(bookingData.user?.id),
+          full_name: profile.full_name || bookingData.user?.name || null,
+          phone: profile.phone || null,
+          avatar_url: profile.avatar_url || null,
+          nrc: profile.nrc || null,
+          gender: profile.gender || null,
+          location: profile.location || null,
+          postal_code: profile.postal_code || null,
+        },
+        driver: bookingData.driver
+          ? {
+              id: String(bookingData.driver.id),
+              name: bookingData.driver.name,
+              phone: bookingData.driver.phone,
+              photo_url: bookingData.driver.photo_url,
+              status: bookingData.driver.status,
+              location: bookingData.driver.location,
+              postal_code: bookingData.driver.postal_code,
+            }
+          : undefined,
         note: bookingData.note,
-        is_read: bookingData.is_read,
+        is_read: bookingData.isRead,
       });
 
-      const { data: driverData, error: driverError } = await supabase
-        .from("drivers")
-        .select("id,name,phone,status,location,photo_url,postal_code")
-        .eq("owner_id", ownerId)
-        .order("name", { ascending: true });
+      // Fetch drivers for this owner
+      try {
+        const driversResp = await apiClient.get("/drivers");
+        const driverData = Array.isArray(driversResp.data) ? driversResp.data : [];
 
-      let blockedDriverIds = new Set<string>();
-      const { data: overlappingBookings, error: overlapError } = await supabase
-        .from("bookings")
-        .select("driver_id")
-        .eq("status", "approved")
-        .neq("id", bookingData.id)
-        .lte("start_date", bookingData.end_date)
-        .gte("end_date", bookingData.start_date)
-        .not("driver_id", "is", null);
+        // Check for overlapping approved bookings to mark drivers as blocked
+        let blockedDriverIds = new Set<string>();
+        try {
+          const overlapResp = await apiClient.get("/bookings", {
+            params: {
+              status: "APPROVED",
+              limit: 100,
+              startDate: bookingData.startDate?.split("T")[0],
+              endDate: bookingData.endDate?.split("T")[0],
+            },
+          });
+          const overlaps = overlapResp.data?.data || [];
+          blockedDriverIds = new Set(
+            overlaps
+              .filter((b: any) => String(b.id) !== bookingId && b.driverId)
+              .map((b: any) => String(b.driverId)),
+          );
+        } catch {}
 
-      if (overlapError) {
-        // Optionally handle overlap error silently
-      } else if (overlappingBookings) {
-        blockedDriverIds = new Set(
-          overlappingBookings
-            .map((booking: any) => booking.driver_id)
-            .filter(Boolean),
-        );
-      }
-
-      if (driverError) {
-        // Optionally handle driver error silently
-      } else if (driverData) {
         setDrivers(
-          (driverData as Driver[]).map((driver) => ({
-            ...driver,
+          driverData.map((driver: any) => ({
+            id: String(driver.id),
+            name: driver.name,
+            phone: driver.phone,
+            status: driver.status,
+            location: driver.location || null,
+            postal_code: driver.postal_code || null,
+            photo_url: driver.photo_url || null,
             is_blocked:
-              blockedDriverIds.has(driver.id) || driver.status !== "available",
+              blockedDriverIds.has(String(driver.id)) ||
+              driver.status !== "available",
           })),
         );
-        if (!selectedDriverId && bookingData.driver_id) {
-          setSelectedDriverId(bookingData.driver_id);
+
+        if (!selectedDriverId && bookingData.driverId) {
+          setSelectedDriverId(String(bookingData.driverId));
         }
-      }
+      } catch {}
     } catch (err: any) {
       setError("Booking not found.");
       setBooking(null);
-      // Do not log error to console if booking is missing
     } finally {
       setLoading(false);
     }
-  }, [bookingId, ownerId, selectedDriverId]);
+  }, [bookingId, selectedDriverId]);
 
   useEffect(() => {
     if (role !== "car_owner") {
@@ -416,35 +418,9 @@ const OwnerBookingDetails = ({ bookingId }: Props) => {
     const markBookingNotificationRead = async () => {
       if (!currentUserId || !bookingId) return;
 
-      const { data: updatedBookings } = await supabase
-        .from("bookings")
-        .update({ is_read: true })
-        .select("id")
-        .eq("id", bookingId)
-        .eq("is_read", false);
-
-      const bookingReadCount = updatedBookings?.length ?? 0;
-      if (bookingReadCount > 0) {
-        adjustBadgeCount(currentUserId, "bookings", -bookingReadCount);
-      }
-
-      const { data: updatedNotifications } = await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .select("id")
-        .eq("receiver_id", currentUserId)
-        .eq("reference_id", bookingId)
-        .eq("type", "booking")
-        .eq("is_read", false);
-
-      const notificationReadCount = updatedNotifications?.length ?? 0;
-      if (notificationReadCount > 0) {
-        adjustBadgeCount(
-          currentUserId,
-          "notifications",
-          -notificationReadCount,
-        );
-      }
+      try {
+        await apiClient.patch(`/bookings/${bookingId}/read`);
+      } catch {}
     };
 
     markBookingNotificationRead();
@@ -487,47 +463,31 @@ const OwnerBookingDetails = ({ bookingId }: Props) => {
     if (!booking) return;
     setSaving(true);
 
-    const payload: any = {};
-    if (changes.status) payload.status = changes.status;
-    if (changes.driver_id !== undefined) payload.driver_id = changes.driver_id;
+    try {
+      const payload: any = {};
+      if (changes.status) payload.status = changes.status.toUpperCase();
+      if (changes.driver_id !== undefined) payload.driverId = Number(changes.driver_id);
 
-    const {
-      data,
-      error: updateError,
-      status: httpStatus,
-    } = await supabase
-      .from("bookings")
-      .update(payload)
-      .eq("id", booking.id)
-      .select(); // Ask for data back to verify update happened
+      await apiClient.patch(`/bookings/${booking.id}/status`, payload);
 
-    if (updateError) {
-      showMessage("Update failed", updateError.message, "error");
+      setBooking((prev) => (prev ? { ...prev, ...changes } : prev));
       setSaving(false);
-      return;
-    }
+      showMessage("Success", message, "success");
 
-    // Verify if any row was actually updated
-    if (!data || data.length === 0) {
+      // Invalidate queries to refresh lists
+      queryClient.invalidateQueries({ queryKey: ["owner_bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["renter_bookings"] });
+
+      // Immediately re-load state so we have the latest relations
+      await loadBooking();
+    } catch (error: any) {
       showMessage(
         "Update failed",
-        "No changes were saved. You might not have permission to modify this booking.",
+        error?.response?.data?.message || error?.message || "Failed to update booking",
         "error",
       );
       setSaving(false);
-      return;
     }
-
-    setBooking((prev) => (prev ? { ...prev, ...changes } : prev));
-    setSaving(false);
-    showMessage("Success", message, "success");
-
-    // Invalidate queries to refresh lists
-    queryClient.invalidateQueries({ queryKey: ["owner_bookings"] });
-    queryClient.invalidateQueries({ queryKey: ["renter_bookings"] });
-
-    // Immediately re-load state so we have the latest relations
-    await loadBooking();
   };
 
   /**

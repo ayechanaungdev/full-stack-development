@@ -29,6 +29,11 @@ export class BookingsController {
         return this.bookingsService.getOwnerDashboard(req.user.userId);
     }
 
+    @Get('debug')
+    getDebugInfo(@Request() req: any) {
+        return { userId: req.user.userId, role: req.user.role, email: req.user.email };
+    }
+
     @Get()
     findAll(
         @Request() req: any,
@@ -38,6 +43,8 @@ export class BookingsController {
         @Query('month') month?: string,
         @Query('year') year?: string,
         @Query('search') search?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
     ) {
         return this.bookingsService.findAll(req.user, {
             status,
@@ -46,6 +53,8 @@ export class BookingsController {
             month: month ? parseInt(month, 10) : undefined,
             year: year ? parseInt(year, 10) : undefined,
             search,
+            startDate,
+            endDate,
         });
     }
 
@@ -58,8 +67,9 @@ export class BookingsController {
     updateStatus(
         @Param('id') id: string,
         @Body('status') status: string,
+        @Body('driverId') driverId?: number,
     ) {
-        return this.bookingsService.updateStatus(+id, status);
+        return this.bookingsService.updateStatus(+id, status, driverId);
     }
 
     @Patch(':id/read')

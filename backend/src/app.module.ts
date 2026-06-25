@@ -18,6 +18,7 @@ import { WishlistModule } from './wishlist/wishlist.module';
 import { MailModule } from './mail/mail.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReviewsModule } from './reviews/reviews.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { ReviewsModule } from './reviews/reviews.module';
     CronModule,
     NotificationsModule,
     ReviewsModule,
+    ReportsModule,
   ],
   controllers: [AppController], // Routes go here
   providers: [AppService], // Business logic goes here

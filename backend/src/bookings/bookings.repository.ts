@@ -65,10 +65,14 @@ export class BookingsRepository extends BaseRepository<any> {
     });
   }
 
-  async updateStatus(id: number, status: string): Promise<any> {
+  async updateStatus(id: number, status: string, driverId?: number): Promise<any> {
+    const data: any = { status: status as any };
+    if (driverId !== undefined) {
+      data.driver = { connect: { id: driverId } };
+    }
     return this.prisma.booking.update({
       where: { id },
-      data: { status: status as any },
+      data,
       include: {
         user: { include: { profile: true } },
         car: { include: { owner: { include: { profile: true } } } },
@@ -87,7 +91,10 @@ export class BookingsRepository extends BaseRepository<any> {
             },
           },
         },
-        user: true,
+        user: {
+          include: { profile: true },
+        },
+        driver: true,
       },
     });
   }
@@ -106,7 +113,10 @@ export class BookingsRepository extends BaseRepository<any> {
             },
           },
         },
-        user: true,
+        user: {
+          include: { profile: true },
+        },
+        driver: true,
       },
     });
   }

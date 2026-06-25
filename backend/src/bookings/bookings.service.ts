@@ -98,6 +98,8 @@ export class BookingsService {
             month?: number;
             year?: number;
             search?: string;
+            startDate?: string;
+            endDate?: string;
         },
     ) {
         const page = filters?.page || 1;
@@ -106,7 +108,9 @@ export class BookingsService {
 
         const where: any = {};
 
-        if (user.role !== 'ADMIN') {
+        if (user.role === 'car_owner') {
+            where.ownerId = user.userId;
+        } else if (user.role !== 'admin') {
             where.userId = user.userId;
         }
 
@@ -121,6 +125,19 @@ export class BookingsService {
                 gte: startDate,
                 lte: endDate,
             };
+        }
+
+        if (filters?.startDate || filters?.endDate) {
+            const dateFilter: any = {};
+            if (filters?.startDate) {
+                dateFilter.gte = new Date(filters.startDate);
+            }
+            if (filters?.endDate) {
+                const end = new Date(filters.endDate);
+                end.setHours(23, 59, 59, 999);
+                dateFilter.lte = end;
+            }
+            where.startDate = dateFilter;
         }
 
         if (filters?.search) {
@@ -144,7 +161,7 @@ export class BookingsService {
             throw new NotFoundException('Booking not found');
         }
 
-        if (user.role !== 'ADMIN' && booking.userId !== user.userId) {
+        if (user.role !== 'ADMIN' && booking.userId !== user.userId && booking.car?.ownerId !== user.userId) {
             throw new ForbiddenException('Access denied');
         }
 
@@ -171,9 +188,9 @@ export class BookingsService {
         });
     }
 
-    async updateStatus(id: number, status: string) {
+    async updateStatus(id: number, status: string, driverId?: number) {
         const normalizedStatus = status.toUpperCase();
-        const updatedBooking = await this.bookingsRepository.updateStatus(id, normalizedStatus);
+        const updatedBooking = await this.bookingsRepository.updateStatus(id, normalizedStatus, driverId);
 
         // Notify the customer
         if (updatedBooking.user) {

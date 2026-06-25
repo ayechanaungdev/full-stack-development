@@ -6,7 +6,7 @@ import { Image } from "@/components/ui/image";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
 import { adjustBadgeCount } from "@/store/useBadgeStore";
 import tailwindConfig from "@/tailwind.config";
@@ -48,17 +48,11 @@ export default function ReportDetail() {
   } = useQuery({
     queryKey: ["daily_reports", id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("daily_reports")
-        .select("*")
-        .eq("id", id)
-        .eq("owner_id", profile?.id)
-        .single();
+      const response = await apiClient.get(`/reports/${id}`);
+      const data = response.data;
 
-      if (error) throw error;
-
-      // booking_ids may come as JSON string form (e.g. '["id1","id2"]')
-      const booking_ids_raw = (data as any)?.booking_ids;
+      // booking_ids may come as JSON array or string
+      const booking_ids_raw = data?.booking_ids;
       const parsed_booking_ids: string[] =
         typeof booking_ids_raw === "string"
           ? (() => {
@@ -70,12 +64,16 @@ export default function ReportDetail() {
               }
             })()
           : Array.isArray(booking_ids_raw)
-            ? booking_ids_raw
+            ? booking_ids_raw.map(String)
             : [];
 
       return {
-        ...(data as any),
+        id: String(data.id),
+        total_completed: data.total_completed || 0,
         booking_ids: parsed_booking_ids,
+        status: data.status || "",
+        is_read: data.isRead || false,
+        created_at: data.createdAt,
       } as ReportRecord;
     },
     enabled: !!id && !!profile?.id,
@@ -90,15 +88,15 @@ export default function ReportDetail() {
     queryFn: async () => {
       if (!report?.booking_ids?.length) return [];
 
-      const { data, error } = await supabase
-        .from("bookings")
-        .select(
-          "*, car:cars(*, car_images(*)), customer:profiles!bookings_customer_id_fkey(*)",
-        )
-        .in("id", report.booking_ids);
-
-      if (error) throw error;
-      return data;
+      // Fetch each booking individually since the backend doesn't have a bulk endpoint
+      const results = await Promise.allSettled(
+        report.booking_ids.map((bid) =>
+          apiClient.get(`/bookings/${bid}`).then((r) => r.data),
+        ),
+      );
+      return results
+        .filter((r) => r.status === "fulfilled")
+        .map((r: any) => r.value);
     },
     enabled: !!report?.booking_ids?.length,
   });
@@ -107,36 +105,15 @@ export default function ReportDetail() {
     const markReportRead = async () => {
       if (!report || !user?.id || report.is_read) return;
 
-      const { data: updatedReports } = await supabase
-        .from("daily_reports")
-        .update({ is_read: true })
-        .select("id")
-        .eq("id", report.id)
-        .eq("is_read", false);
-
-      const reportReadCount = updatedReports?.length ?? 0;
-      if (reportReadCount > 0) {
-        adjustBadgeCount(user.id, "reports", -reportReadCount);
-
-        const { data: updatedNotifications } = await supabase
-          .from("notifications")
-          .update({ is_read: true })
-          .select("id")
-          .eq("receiver_id", user.id)
-          .eq("reference_id", report.id)
-          .eq("type", "system")
-          .eq("is_read", false);
-
-        const notificationReadCount = updatedNotifications?.length ?? 0;
-        if (notificationReadCount > 0) {
-          adjustBadgeCount(user.id, "notifications", -notificationReadCount);
-        }
+      try {
+        await apiClient.patch(`/reports/${report.id}/read`);
+        adjustBadgeCount(user.id, "reports", -1);
 
         queryClient.setQueryData(["badge-counts", user.id], (oldData: any) => {
           if (!oldData) return oldData;
           return {
             ...oldData,
-            reports: Math.max(0, oldData.reports - reportReadCount),
+            reports: Math.max(0, oldData.reports - 1),
           };
         });
 
@@ -160,7 +137,7 @@ export default function ReportDetail() {
             };
           },
         );
-      }
+      } catch {}
     };
 
     markReportRead();
@@ -221,22 +198,19 @@ export default function ReportDetail() {
                 </Text>
                 {bookings && bookings.length > 0 ? (
                   bookings.map((booking: any) => {
-                    const startDate = booking.start_date
-                      ? booking.start_date.toString().split("T")[0]
-                      : booking.start_date || "N/A";
-                    const endDate = booking.end_date
-                      ? booking.end_date.toString().split("T")[0]
-                      : booking.end_date || "N/A";
-                    const createdAt = booking.created_at
-                      ? new Date(booking.created_at).toLocaleDateString()
-                      : "N/A";
+                    const startDate = booking.startDate
+                      ? booking.startDate.toString().split("T")[0]
+                      : booking.startDate || "N/A";
+                    const endDate = booking.endDate
+                      ? booking.endDate.toString().split("T")[0]
+                      : booking.endDate || "N/A";
                     const totalDays =
-                      booking.start_date && booking.end_date
+                      booking.startDate && booking.endDate
                         ? Math.max(
                             1,
                             Math.round(
-                              (new Date(booking.end_date).getTime() -
-                                new Date(booking.start_date).getTime()) /
+                              (new Date(booking.endDate).getTime() -
+                                new Date(booking.startDate).getTime()) /
                                 (1000 * 60 * 60 * 24),
                             ),
                           )
@@ -244,15 +218,16 @@ export default function ReportDetail() {
                     const carTitle =
                       (booking.car?.brand || "") +
                         (booking.car?.model ? ` ${booking.car.model}` : "") ||
-                      booking.car_id ||
+                      booking.carId ||
                       "Car details unavailable";
                     const renterName =
-                      booking.customer?.name ||
-                      booking.customer?.full_name ||
-                      booking.customer_id ||
+                      booking.user?.profile?.full_name ||
+                      booking.user?.name ||
+                      booking.userId ||
                       "Unknown renter";
+                    const carImages = booking.car?.carImages || [];
                     const imageUri =
-                      booking.car?.car_images?.[0]?.image_url ||
+                      carImages[0]?.image_url ||
                       booking.car?.image_url ||
                       "https://images.unsplash.com/photo-1511919884226-fd3cad34687c?auto=format&fit=crop&w=640&q=80";
                     const carPlateNumber = booking.car?.car_number || "N/A";
@@ -262,7 +237,6 @@ export default function ReportDetail() {
                         onPress={() => router.push(`/booking/${booking.id}`)}
                       >
                         <Card
-                          key={booking.id}
                           className="rounded-xl overflow-hidden bg-white mb-2"
                           style={{ ...CARD_SHADOW }}
                         >
