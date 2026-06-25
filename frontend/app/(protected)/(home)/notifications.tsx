@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -40,6 +40,35 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type TabType = "all" | "booking" | "message" | "system" | "owner-car";
 
+const mapType = (type: string): TabType => {
+  if (type === 'NEW_BOOKING' || type.startsWith('STATUS_CHANGED_') || type.startsWith('OWNER_STATUS_CHANGED_') || type.startsWith('UPCOMING_REMINDER_')) {
+    return 'booking';
+  }
+  if (type === 'message') return 'message';
+  if (type === 'system') return 'system';
+  if (type === 'owner-car') return 'owner-car';
+  return 'booking';
+};
+
+const mapNotification = (n: any): any => {
+  const mappedType: TabType = mapType(n.type);
+  return {
+    id: String(n.id),
+    receiver_id: String(n.userId),
+    sender_id: n.senderId ? String(n.senderId) : null,
+    reference_id: n.referenceId || String(n.bookingId || ''),
+    title: n.title,
+    body: n.body,
+    type: mappedType,
+    is_read: n.isRead,
+    created_at: n.createdAt,
+    _originalType: n.type,
+    _bookingId: n.bookingId,
+    _senderId: n.senderId,
+    _referenceId: n.referenceId,
+  };
+};
+
 export default function NotificationScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -73,8 +102,6 @@ export default function NotificationScreen() {
     setUserRefreshing(false);
   };
 
-  // 💡 Pagination Limits
-  const INITIAL_LIMIT = 10;
   const PAGE_LIMIT = 10;
 
   const {
@@ -86,146 +113,19 @@ export default function NotificationScreen() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["notifications", activeTab, user?.id],
-    queryFn: async ({ pageParam = 0 }) => {
+    queryKey: ["notifications", user?.id],
+    queryFn: async ({ pageParam = 1 }) => {
       if (!user?.id) return [];
-
-      if (activeTab === "all" && pageParam === 0) {
-        const threeDaysAgo = new Date();
-        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-        threeDaysAgo.setHours(0, 0, 0, 0);
-
-        const priorityQuery = supabase
-          .from("notifications")
-          .select("*")
-          .eq("receiver_id", user.id)
-          .eq("type", "system")
-          // .eq("is_read", false)
-          .gte("created_at", threeDaysAgo.toISOString())
-          .order("created_at", { ascending: false })
-          .limit(3);
-
-        const messageQuery = supabase
-          .from("notifications")
-          .select("*")
-          .eq("receiver_id", user.id)
-          .eq("type", "message")
-          .eq("is_read", false)
-          .order("sender_id")
-          .order("created_at", { ascending: false });
-
-        const messageCondition = `and(type.eq.message,is_read.eq.false)`;
-        const otherCondition = `type.neq.message`;
-
-        const regularQuery = supabase
-          .from("notifications")
-          .select("*")
-          .eq("receiver_id", user.id)
-          // .eq("is_read", false)
-          .or(`${messageCondition},${otherCondition}`)
-          .order("created_at", { ascending: false })
-          .range(0, 14);
-
-        const [
-          { data: prioritySystems, error: err1 },
-          { data: allNotis, error: err2 },
-          { data: messageNotis, error: err3 },
-        ] = await Promise.all([priorityQuery, regularQuery, messageQuery]);
-
-        if (err1) throw err1;
-        if (err2) throw err2;
-        if (err3) throw err3;
-
-        if (err1 || err2 || err3) throw err1 || err2 || err3;
-
-        const latestMessagesPerSender = (messageNotis || []).reduce(
-          (acc: any[], current: any) => {
-            const existing = acc.find((m) => m.sender_id === current.sender_id);
-            if (!existing) acc.push(current);
-            return acc;
-          },
-          [],
-        );
-
-        const priorityIds = (prioritySystems || []).map((p) => p.id);
-        const messageIds = (messageNotis || []).map((m) => m.id);
-
-        const filteredRegular = (allNotis || []).filter(
-          (item) =>
-            !priorityIds.includes(item.id) && !messageIds.includes(item.id),
-        );
-
-        const finalRegular = filteredRegular.slice(
-          0,
-          INITIAL_LIMIT - (prioritySystems?.length || 0),
-        );
-
-        // const combined = [...(prioritySystems || []), ...latestMessagesPerSender, ...finalRegular];
-        const combinedRaw = [
-          ...(prioritySystems || []),
-          ...latestMessagesPerSender,
-          ...finalRegular,
-        ];
-
-        const combined = combinedRaw
-          .filter(
-            (item, index, self) =>
-              index === self.findIndex((t) => t.id === item.id),
-          )
-          .sort(
-            (a, b) =>
-              new Date(b.created_at).getTime() -
-              new Date(a.created_at).getTime(),
-          );
-
-        return combined;
-      }
-
-      const from =
-        pageParam === 0 ? 0 : INITIAL_LIMIT + (pageParam - 1) * PAGE_LIMIT;
-      const to = pageParam === 0 ? INITIAL_LIMIT - 1 : from + PAGE_LIMIT - 1;
-
-      const query = supabase
-        .from("notifications")
-        .select("*")
-        .eq("receiver_id", user.id)
-        .order("created_at", { ascending: false })
-        .range(from, to);
-
-      if (activeTab === "message") {
-        query.eq("is_read", false).order("sender_id");
-      }
-
-      if (activeTab !== "all") {
-        query.eq("type", activeTab);
-      }
-
-      const { data: resData, error } = await query;
-      if (error) throw error;
-
-      if (activeTab === "message") {
-        const uniqueMessages = (resData || []).reduce(
-          (acc: any[], current: any) => {
-            const existing = acc.find((m) => m.sender_id === current.sender_id);
-            if (!existing) acc.push(current);
-            return acc;
-          },
-          [],
-        );
-        return uniqueMessages;
-      }
-      return resData || [];
+      const response = await apiClient.get('/notifications', {
+        params: { page: pageParam, limit: PAGE_LIMIT },
+      });
+      const { data: items } = response.data;
+      return (items || []).map(mapNotification);
     },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      if (!lastPage || !Array.isArray(lastPage) || lastPage.length === 0) {
-        return undefined;
-      }
-      const expectedCount = allPages.length === 1 ? INITIAL_LIMIT : PAGE_LIMIT;
-      if (lastPage.length < expectedCount) {
-        return undefined;
-      }
-      return allPages.length;
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages, lastPageParam) => {
+      if (!lastPage || lastPage.length < PAGE_LIMIT) return undefined;
+      return lastPageParam + 1;
     },
     placeholderData: (previousData) => previousData,
   });
@@ -235,7 +135,7 @@ export default function NotificationScreen() {
 
     const seen = new Set();
 
-    return data.pages
+    const all = data.pages
       .flat()
       .filter(Boolean)
       .filter((item) => {
@@ -243,7 +143,17 @@ export default function NotificationScreen() {
         seen.add(item.id);
         return true;
       });
-  }, [data]);
+
+    if (activeTab === "all") return all;
+    if (activeTab === "message") {
+      const unreadMessages = all.filter((n) => n.type === "message" && !n.is_read);
+      return unreadMessages.reduce((acc: any[], cur: any) => {
+        if (!acc.find((m) => m.sender_id === cur.sender_id)) acc.push(cur);
+        return acc;
+      }, []);
+    }
+    return all.filter((n) => n.type === activeTab);
+  }, [data, activeTab]);
 
   useEffect(() => {
     setIsViewAll(false);
@@ -253,33 +163,55 @@ export default function NotificationScreen() {
   }, [activeTab]);
 
   const displayedNotifications = useMemo(() => {
+    const allNotis = safeNotifications;
+    const unreadMessages = allNotis.filter((n) => n.type === "message" && !n.is_read);
+    const latestPerSender = unreadMessages.reduce((acc: any[], cur: any) => {
+      if (!acc.find((m) => m.sender_id === cur.sender_id)) acc.push(cur);
+      return acc;
+    }, []);
+
     if (!isViewAll) {
       if (activeTab === "all") {
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         threeDaysAgo.setHours(0, 0, 0, 0);
 
-        const systemNotis = safeNotifications.filter(
+        const systemNotis = allNotis.filter(
           (item) =>
             item.type === "system" && new Date(item.created_at) >= threeDaysAgo,
         );
 
-        const otherNotis = safeNotifications.filter(
+        const otherNotis = allNotis.filter(
           (item) =>
-            item.type !== "system" || new Date(item.created_at) < threeDaysAgo,
+            (item.type !== "system" || new Date(item.created_at) < threeDaysAgo)
+            && item.type !== "message",
         );
 
         const limitedSystems = systemNotis.slice(0, 3);
+        const limitedMessages = latestPerSender.slice(0, 2);
+        const remainingSlots = 5 - limitedSystems.length - limitedMessages.length;
+        const limitedOthers = otherNotis.slice(0, Math.max(0, remainingSlots));
 
-        const remainingSlots = 5 - limitedSystems.length;
-        const limitedOthers = otherNotis.slice(0, remainingSlots);
-
-        return [...limitedSystems, ...limitedOthers];
+        return [...limitedSystems, ...limitedMessages, ...limitedOthers];
       }
 
-      return safeNotifications.slice(0, 5);
+      return allNotis.slice(0, 5);
     }
-    return safeNotifications;
+
+    if (activeTab === "message") return latestPerSender;
+    if (activeTab === "all") {
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      threeDaysAgo.setHours(0, 0, 0, 0);
+      const recentSystems = allNotis.filter(
+        (item) => item.type === "system" && new Date(item.created_at) >= threeDaysAgo,
+      );
+      const otherTypes = allNotis.filter(
+        (item) => item.type !== "message" && (item.type !== "system" || new Date(item.created_at) < threeDaysAgo),
+      );
+      return [...recentSystems, ...latestPerSender, ...otherTypes];
+    }
+    return allNotis;
   }, [safeNotifications, isViewAll, activeTab]);
 
   const { sections } = useMemo(() => {
@@ -339,12 +271,9 @@ export default function NotificationScreen() {
       );
     } else {
       if (item.is_read === false) {
-        const { error } = await supabase
-          .from("notifications")
-          .update({ is_read: true })
-          .eq("id", item.id);
-        if (!error) {
-          queryClient.setQueryData(["notifications", activeTab], (old: any) => {
+        try {
+          await apiClient.patch(`/notifications/${item.id}/read`);
+          queryClient.setQueryData(["notifications", user?.id], (old: any) => {
             if (!old || !old.pages) return old;
             return {
               ...old,
@@ -358,21 +287,17 @@ export default function NotificationScreen() {
             };
           });
           if (user?.id) invalidateBadgeCounts(user.id);
-        }
+        } catch {}
       }
 
-      if (item.type === "message") {
-        const chatId = item.sender_id || item.metadata?.sender_id;
-        if (chatId) router.push(`/chat/${chatId}` as any);
-      } else if (item.type === "booking") {
-        const bookingId = item.reference_id || item.metadata?.reference_id;
-        router.push(`/booking/${bookingId || item.id}` as any);
-      } else if (item.type === "system") {
-        const reportId = item.reference_id || item.metadata?.reference_id;
-        router.push(`/reports/${reportId || item.id}` as any);
-      } else if (item.type === "owner-car") {
-        const carid = item.reference_id || item.metadata?.reference_id;
-        router.push(`/car/${carid || item.id}` as any);
+      if (item._bookingId) {
+        router.push(`/booking/${item._bookingId}` as any);
+      } else if (item.type === 'message' && item._senderId) {
+        router.push(`/chat/${item._senderId}` as any);
+      } else if (item.type === 'system' && item._referenceId) {
+        router.push(`/reports/${item._referenceId}` as any);
+      } else if (item.type === 'owner-car' && item._referenceId) {
+        router.push(`/car/${item._referenceId}` as any);
       }
     }
   };
@@ -389,14 +314,11 @@ export default function NotificationScreen() {
 
   const deleteSelected = async () => {
     try {
-      const { error } = await supabase
-        .from("notifications")
-        .delete()
-        .in("id", selectedIds);
-      if (error) throw error;
+      const ids = selectedIds.map(Number);
+      await apiClient.delete('/notifications', { data: { ids } });
       setShowAlert(false);
 
-      queryClient.setQueryData(["notifications", activeTab], (old: any) => {
+      queryClient.setQueryData(["notifications", user?.id], (old: any) => {
         if (!old || !old.pages) return old;
         return {
           ...old,
@@ -742,6 +664,7 @@ export default function NotificationScreen() {
                 {[...Array(3)].map((_, index) => renderSkeletonCard(index))}
               </Box>
             ) : !isViewAll &&
+              displayedNotifications.length > 0 &&
               safeNotifications.length > displayedNotifications.length ? (
               <TouchableOpacity
                 onPress={handleViewAllPress}

@@ -7,7 +7,9 @@ import {
   Param,
   Delete,
   ParseIntPipe,
+  Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -29,10 +31,18 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  @Get('check-phone/:phone')
+  @UseGuards(JwtAuthGuard)
+  checkPhone(
+    @Param('phone') phone: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    return this.usersService.checkPhone(phone, excludeId ? parseInt(excludeId, 10) : undefined);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   findOne(@Param('id', ParseIntPipe) id: number) {
-    // 👈 Pro tip: Use ParseIntPipe!
     return this.usersService.findOne(id);
   }
 
@@ -43,6 +53,20 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
   ) {
     return this.usersService.update(id, updateUserDto);
+  }
+
+  @Patch(':id/push-token')
+  @UseGuards(JwtAuthGuard)
+  updatePushToken(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('expo_push_token') expoPushToken: string | null,
+    @Request() req: any,
+  ) {
+    // Only allow users to update their own push token
+    if (req.user.userId !== id) {
+      return { error: 'Unauthorized' };
+    }
+    return this.usersService.updatePushToken(id, expoPushToken);
   }
 
   @Delete(':id')

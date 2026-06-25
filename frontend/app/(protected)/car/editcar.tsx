@@ -21,10 +21,9 @@ import { Textarea, TextareaInput } from "@/components/ui/textarea";
 import { VStack } from "@/components/ui/vstack";
 import carBrands from "@/constants/car-brands.json";
 import yangonTownships from "@/constants/yangon-townships.json";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
-import { decode } from "base64-arraybuffer";
 import * as ImagePicker from "expo-image-picker";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import {
@@ -150,89 +149,83 @@ export default function EditCarDetailScreen() {
     const fetchCarData = async () => {
       setLoading(true);
 
-      // Fetch Car Details
-      const { data: car, error } = await supabase
-        .from("cars")
-        .select("*")
-        .eq("id", id)
-        .single();
+      try {
+        const response = await apiClient.get(`/cars/${id}`);
+        const car = response.data;
 
-      if (car) {
-        // 1. Create the formattedData object that your code is looking for
-        const formattedData = {
-          brand: car.brand || "",
-          model: car.model || "",
-          car_type: car.car_type || "",
-          car_number: car.car_number || "",
-          seats: String(car.seats || ""),
-          price_per_day: String(car.price_per_day || ""),
-          location: car.location || "",
-          description: car.description || "",
-          status: car.status === "Available",
-          has_ac: car.has_ac ?? true,
-          township: car.postal_code || "",
-        };
+        if (car) {
+          const formattedData = {
+            brand: car.brand || "",
+            model: car.model || "",
+            car_type: car.car_type || "",
+            car_number: car.car_number || "",
+            seats: String(car.seats || ""),
+            price_per_day: String(car.pricePerDay || ""),
+            location: car.location || "",
+            description: car.description || "",
+            status: car.status?.toLowerCase() === "available",
+            has_ac: car.has_ac ?? true,
+            township: car.postal_code || "",
+          };
 
-        // 2. Now these calls will work because 'formattedData' is defined
-        const isStandardBrand = carBrands.some(
-          (b) => b.brand === formattedData.brand,
-        );
-        if (isStandardBrand) {
-          setBrand(formattedData.brand);
-          const foundBrand = carBrands.find(
+          const isStandardBrand = carBrands.some(
             (b) => b.brand === formattedData.brand,
           );
-          const isStandardModel = foundBrand
-            ? foundBrand.models
+          if (isStandardBrand) {
+            setBrand(formattedData.brand);
+            const foundBrand = carBrands.find(
+              (b) => b.brand === formattedData.brand,
+            );
+            const isStandardModel = foundBrand
+              ? foundBrand.models
                 .filter((m) => m !== "Other")
                 .includes(formattedData.model)
-            : false;
-          if (isStandardModel) {
-            setModel(formattedData.model);
-            setCustomModel("");
+              : false;
+            if (isStandardModel) {
+              setModel(formattedData.model);
+              setCustomModel("");
+            } else {
+              setModel("Other");
+              setCustomModel(formattedData.model);
+            }
+            setCustomBrand("");
           } else {
+            setBrand("Other");
+            setCustomBrand(formattedData.brand);
             setModel("Other");
             setCustomModel(formattedData.model);
           }
-          setCustomBrand("");
-        } else {
-          setBrand("Other");
-          setCustomBrand(formattedData.brand);
-          setModel("Other");
-          setCustomModel(formattedData.model);
+
+          setCarType(formattedData.car_type);
+          setCarNumber(formattedData.car_number);
+          setSeats(formattedData.seats);
+          setPricePerDay(formattedData.price_per_day);
+          setLocation(formattedData.location);
+          setDescription(formattedData.description);
+          setStatus(formattedData.status);
+          setHasAc(formattedData.has_ac);
+          setForm({ township: formattedData.township });
+          setInitialData(formattedData);
+
+          const imgs = (car.carImages || []).map((img: any) => ({
+            id: img.id,
+            image_url: img.image_url,
+            is_primary: img.is_primary ?? false,
+          }));
+
+          if (imgs && imgs.length > 0) {
+            const cleaned = imgs.map((img: any, index: number) => ({
+              ...img,
+              is_primary: index === 0, // FORCE ONLY ONE PRIMARY
+            }));
+            setImages(cleaned);
+          }
         }
-
-        setCarType(formattedData.car_type);
-        setCarNumber(formattedData.car_number);
-        setSeats(formattedData.seats);
-        setPricePerDay(formattedData.price_per_day);
-        setLocation(formattedData.location);
-        setDescription(formattedData.description);
-        setStatus(formattedData.status);
-        setHasAc(formattedData.has_ac);
-        setForm({ township: formattedData.township });
-
-        // This is important for your handleSaveData logic to work
-        setInitialData(formattedData);
+      } catch (err) {
+        console.error("Error fetching car data:", err);
+      } finally {
+        setLoading(false);
       }
-
-      // Fetch Images
-      const { data: imgs } = await supabase
-        .from("car_images")
-        .select("*")
-        .eq("car_id", id)
-        .order("is_primary", { ascending: false });
-
-      // if (imgs) setImages(imgs);
-      if (imgs && imgs.length > 0) {
-        const cleaned = imgs.map((img, index) => ({
-          ...img,
-          is_primary: index === 0, // FORCE ONLY ONE PRIMARY
-        }));
-
-        setImages(cleaned);
-      }
-      setLoading(false);
     };
 
     fetchCarData();
@@ -362,41 +355,34 @@ export default function EditCarDetailScreen() {
       setImagesToDelete((prev) => [...prev, img]);
     }
   };
-  const uploadPendingImages = async (carId: string) => {
-    const pending = images.filter((img) => img.isLocal);
+  const uploadLocalImages = async (carId: string) => {
+    const updatedImages = [...images];
 
-    const primaryIndex = images.findIndex((i) => i.is_primary);
+    for (let i = 0; i < updatedImages.length; i++) {
+      const img = updatedImages[i];
+      if (img.isLocal) {
+        const ext = img.fileExt || "jpg";
+        const fileName = `${carId}_${Date.now()}_${i}.${ext}`;
 
-    for (let i = 0; i < pending.length; i++) {
-      const img = pending[i];
+        const { data: uploadResult } = await apiClient.post<{ publicUrl: string }>(
+          "/uploads",
+          {
+            filename: fileName,
+            contentBase64: img.base64,
+            contentType: `image/${ext}`,
+            folder: "car_rental_app/car_images",
+          },
+        );
 
-      const fileName = `${carId}/${Date.now()}-${Math.random()
-        .toString(36)
-        .substring(7)}.${img.fileExt}`;
-
-      const { error: storageError } = await supabase.storage
-        .from("car-images")
-        .upload(fileName, decode(img.base64), {
-          contentType: `image/${img.fileExt}`,
-        });
-
-      if (storageError) throw storageError;
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("car-images").getPublicUrl(fileName);
-
-      // ✅ IMPORTANT: force primary based on final UI order
-      const isPrimary = i === 0; // first image = primary
-
-      await supabase.from("car_images").insert([
-        {
-          car_id: carId,
-          image_url: publicUrl,
-          is_primary: isPrimary,
-        },
-      ]);
+        // Update the image object in our array
+        updatedImages[i] = {
+          image_url: uploadResult.publicUrl,
+          is_primary: img.is_primary ?? false,
+        };
+      }
     }
+
+    return updatedImages;
   };
 
   // Track changes
@@ -506,8 +492,6 @@ export default function EditCarDetailScreen() {
     } else if (field === "car_number") {
       if (!value.trim()) {
         error = "Car Number is required.";
-      } else if (!/^[0-9][A-Z]-[0-9]{4}$/.test(value)) {
-        error = "Format must be 1A-1234.";
       }
     } else if (field === "seats") {
       if (!value.trim()) {
@@ -631,13 +615,10 @@ export default function EditCarDetailScreen() {
         newErrors.price_per_day = "Price is invalid.";
       }
 
-      // Format Car Number Validations
-      const carPlateRegex = /^[0-9][A-Z]-[0-9]{4}$/;
+      // Car Number Validation (Presence only, since it is read-only)
       const value = car_number?.trim();
       if (!value) {
         newErrors.car_number = "Car Number is required.";
-      } else if (!carPlateRegex.test(value)) {
-        newErrors.car_number = "Format must be 1A-1234.";
       }
 
       if (!form.township) newErrors.township = "Township is required.";
@@ -653,39 +634,29 @@ export default function EditCarDetailScreen() {
         return;
       }
 
-      // Supabase deletion for removed images
-      for (const img of imagesToDelete) {
-        const path = img.image_url.split("car-images/")[1];
-        await supabase.storage.from("car-images").remove([path]);
-        await supabase.from("car_images").delete().eq("id", img.id);
-      }
+      // 1. Upload local images to Cloudinary and get full array
+      const finalImages = await uploadLocalImages(id!);
 
-      // Update Database
-      const { error } = await supabase
-        .from("cars")
-        .update({
-          brand: finalBrand,
-          model: finalModel,
-          car_type: car_type.trim(),
-          seats: seatNum,
-          price_per_day: priceNum,
-          postal_code: form.township,
-          location: location.trim(),
-          description: description.trim(),
-          status:
-            initialData?.status === "Pending"
-              ? "Pending"
-              : status
-                ? "Available"
-                : "Unavailable",
-          has_ac,
-          car_number: car_number.trim(),
-        })
-        .eq("id", id);
+      // 2. Call backend to update car details and synchronize images
+      await apiClient.patch(`/cars/${id}`, {
+        brand: finalBrand,
+        model: finalModel,
+        car_type: car_type.trim(),
+        seats: seatNum,
+        pricePerDay: priceNum, // Backend expects pricePerDay (camelCase)
+        postal_code: form.township,
+        location: location.trim(),
+        description: description.trim(),
+        status: status ? "Available" : "Unavailable",
+        has_ac,
+        car_number: car_number.trim(),
+        images: finalImages.map((img) => ({
+          id: img.id,
+          image_url: img.image_url,
+          is_primary: img.is_primary,
+        })),
+      });
 
-      if (error) throw error;
-
-      await uploadPendingImages(id!);
       setHasUnsavedChanges(false);
 
       // Invalidate React Query cache to automatically refetch details and list screens in the background
@@ -701,8 +672,8 @@ export default function EditCarDetailScreen() {
     } catch (error: any) {
       // Network & Other Errors Handling
       if (
-        error.message.includes("fetch") ||
-        error.message.includes("Network")
+        error.message &&
+        (error.message.includes("fetch") || error.message.includes("Network"))
       ) {
         setAlert({
           visible: true,
@@ -721,6 +692,7 @@ export default function EditCarDetailScreen() {
       setIsSubmitting(false);
     }
   };
+
 
   // Status Toggle Component
   const StatusToggle = React.memo(
@@ -828,9 +800,8 @@ export default function EditCarDetailScreen() {
                   </Text>
 
                   <View
-                    className={`relative w-full h-48 rounded-2xl overflow-hidden mb-2 bg-transparent border ${
-                      errors.images ? "border-error-600" : "border-outline-300"
-                    }`}
+                    className={`relative w-full h-48 rounded-2xl overflow-hidden mb-2 bg-transparent border ${errors.images ? "border-error-600" : "border-outline-300"
+                      }`}
                   >
                     {primaryImage ? (
                       <>
@@ -1016,9 +987,8 @@ export default function EditCarDetailScreen() {
                   className={`rounded-lg border h-12 flex-row justify-between items-center px-3 mb-1 ${errors.brand ? "border-error-600" : "border-outline-300"}`}
                 >
                   <Text
-                    className={`text-[13px] font-medium ${
-                      brand ? "text-typography-900" : "text-typography-400"
-                    }`}
+                    className={`text-[13px] font-medium ${brand ? "text-typography-900" : "text-typography-400"
+                      }`}
                   >
                     {brand || "Select Brand"}
                   </Text>
@@ -1038,11 +1008,10 @@ export default function EditCarDetailScreen() {
                   <>
                     <Input
                       isDisabled={isSubmitting}
-                      className={`rounded-lg border-outline-300 data-[focus=true]:border-sky-500 h-12 bg-transparent w-full mt-2 mb-1 ${
-                        errors.customBrand
+                      className={`rounded-lg border-outline-300 data-[focus=true]:border-sky-500 h-12 bg-transparent w-full mt-2 mb-1 ${errors.customBrand
                           ? "border-error-600"
                           : "border-outline-300"
-                      }`}
+                        }`}
                     >
                       <InputField
                         ref={customBrandRef}
@@ -1090,14 +1059,12 @@ export default function EditCarDetailScreen() {
                   <Pressable
                     disabled={isSubmitting}
                     onPress={() => (brand ? openModal("model") : null)}
-                    className={`rounded-lg border h-12 flex-row justify-between items-center px-3 mb-1 ${
-                      errors.model ? "border-error-600" : "border-outline-300"
-                    } ${!brand ? "opacity-50" : ""}`}
+                    className={`rounded-lg border h-12 flex-row justify-between items-center px-3 mb-1 ${errors.model ? "border-error-600" : "border-outline-300"
+                      } ${!brand ? "opacity-50" : ""}`}
                   >
                     <Text
-                      className={`text-[13px] font-medium ${
-                        model ? "text-typography-900" : "text-typography-400"
-                      }`}
+                      className={`text-[13px] font-medium ${model ? "text-typography-900" : "text-typography-400"
+                        }`}
                     >
                       {model || (brand ? "Select Model" : "Select Brand first")}
                     </Text>
@@ -1121,11 +1088,10 @@ export default function EditCarDetailScreen() {
                   <>
                     <Input
                       isDisabled={isSubmitting}
-                      className={`rounded-lg border-outline-300 data-[focus=true]:border-sky-500 h-12 bg-transparent w-full mt-2 mb-1 ${
-                        errors.customModel
+                      className={`rounded-lg border-outline-300 data-[focus=true]:border-sky-500 h-12 bg-transparent w-full mt-2 mb-1 ${errors.customModel
                           ? "border-error-600"
                           : "border-outline-300"
-                      }`}
+                        }`}
                     >
                       <InputField
                         ref={customModelRef}
@@ -1242,6 +1208,28 @@ export default function EditCarDetailScreen() {
                   onValueChange={setHasAc}
                 />
               </HStack>
+
+              {/* Car Number (Read-only) */}
+              <FormControl
+                className="w-full block mt-1"
+              >
+                <FormControlLabel className="mb-2 w-full flex-row">
+                  <FormControlLabelText className="font-extrabold text-typography-900 text-[13px]">
+                    Car Number
+                  </FormControlLabelText>
+                </FormControlLabel>
+                <Input
+                  isDisabled={true}
+                  className="rounded-lg border-outline-300 bg-gray-100/50 h-12 w-full mb-1 opacity-70"
+                >
+                  <InputField
+                    className="text-[13px] placeholder:text-typography-400 font-medium text-typography-500"
+                    value={car_number}
+                    editable={false}
+                    placeholder="1A-1234 or CAR001"
+                  />
+                </Input>
+              </FormControl>
 
               {/* Price Per Day */}
               <FormControl

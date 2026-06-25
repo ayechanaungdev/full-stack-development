@@ -4,6 +4,7 @@ import {
   IsNumber,
   Min,
   IsOptional,
+  IsString,
 } from 'class-validator';
 
 export class CreateBookingDto {
@@ -25,5 +26,29 @@ export class CreateBookingDto {
 
   @IsOptional()
   @IsInt()
+  ownerId?: number;
+
+  @IsOptional()
+  @IsInt()
   driverId?: number;
+
+  @IsOptional()
+  @IsString()
+  pickupTime?: string;
+
+  @IsOptional()
+  @IsString()
+  dropoffTime?: string;
+
+  @IsOptional()
+  @IsString()
+  pickupLocation?: string;
+
+  @IsOptional()
+  @IsString()
+  dropoffLocation?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

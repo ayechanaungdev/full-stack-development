@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
 import yangontownships from "@/constants/yangon-townships.json";
+import { apiClient } from "@/lib/axios";
 import { supabase } from "@/lib/supabase";
 import { Profile, useAuthStore } from "@/store/useAuthStore";
 import { Ionicons } from "@expo/vector-icons";
@@ -49,14 +50,8 @@ export default function OwnerProfile({ data: initialData }: { data: Profile }) {
   } = useQuery({
     queryKey: ["owner_profile", initialData.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", initialData.id)
-        .single();
-
-      if (error) throw error;
-      return data;
+      const response = await apiClient.get<Profile>(`/users/${initialData.id}`);
+      return response.data;
     },
     initialData,
   });

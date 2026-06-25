@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Request, Patch, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Request, Patch, Param, Query } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { JwtAuthGuard } from '../auth/jwt.guard';
@@ -24,18 +24,56 @@ export class BookingsController {
         });
     }
 
+    @Get('owner-dashboard')
+    getOwnerDashboard(@Request() req: any) {
+        return this.bookingsService.getOwnerDashboard(req.user.userId);
+    }
+
+    @Get('debug')
+    getDebugInfo(@Request() req: any) {
+        return { userId: req.user.userId, role: req.user.role, email: req.user.email };
+    }
+
     @Get()
-    findAll(@Request() req: any) {
-        // Pass the authenticated user info to the service for role-based filtering
-        return this.bookingsService.findAll(req.user);
+    findAll(
+        @Request() req: any,
+        @Query('status') status?: string,
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+        @Query('month') month?: string,
+        @Query('year') year?: string,
+        @Query('search') search?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+    ) {
+        return this.bookingsService.findAll(req.user, {
+            status,
+            page: page ? parseInt(page, 10) : undefined,
+            limit: limit ? parseInt(limit, 10) : undefined,
+            month: month ? parseInt(month, 10) : undefined,
+            year: year ? parseInt(year, 10) : undefined,
+            search,
+            startDate,
+            endDate,
+        });
+    }
+
+    @Get(':id')
+    findOne(@Param('id') id: string, @Request() req: any) {
+        return this.bookingsService.findOne(+id, req.user);
     }
 
     @Patch(':id/status')
     updateStatus(
         @Param('id') id: string,
         @Body('status') status: string,
+        @Body('driverId') driverId?: number,
     ) {
-        return this.bookingsService.updateStatus(+id, status);
+        return this.bookingsService.updateStatus(+id, status, driverId);
     }
 
+    @Patch(':id/read')
+    markAsRead(@Param('id') id: string, @Request() req: any) {
+        return this.bookingsService.markAsRead(+id, req.user.userId);
+    }
 }

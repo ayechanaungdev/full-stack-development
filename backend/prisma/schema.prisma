@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -16,43 +11,82 @@ model User {
   id               Int       @id @default(autoincrement())
   email            String    @unique
   name             String?
-  full_name        String?
-  phone            String?
-  avatar_url       String?
-  nrc              String?
-  nrc_url          String?
-  gender           String?
-  postal_code      String?
-  location         String?
-  is_active        Boolean   @default(true)
-  is_blacklist     Boolean   @default(false)
-  password         String
+  password         String?
+  googleId         String?  @unique
+  provider         String   @default("email")
   refreshToken     String?
-  fcmToken         String?   // 👈 Mobile Device Token for Push Notifications
-  role             Role      @default(USER)
-  bookings         Booking[]
-  inquiries        Inquiry[]
+  fcmToken         String?
+  role             Role      @default(renter)
+
+  bookings           Booking[]
+  ownerBookings      Booking[] @relation("OwnerBookings")
+  sentMessages       Message[] @relation("SentMessages")
+  receivedMessages   Message[] @relation("ReceivedMessages")
+  receivedNotifications Notification[] @relation("ReceivedNotifications")
+  sentNotifications   Notification[] @relation("SentNotifications")
+  inquiries          Inquiry[]
   drivers          Driver[]
-  
-  // 👈 Add these two lines to connect User to Message model
-  sentMessages     Message[] @relation("SentMessages")
-  receivedMessages Message[] @relation("ReceivedMessages")
-  notifications    Notification[]
-  
+  cars             Car[]
+  reviews          Review[]
+  wishlistItems    Wishlist[]
+  auditLogs        AuditLog[]
+  dailyReports     DailyReport[]
+  profile          Profile?
+
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
 
+model Profile {
+  id             Int      @id
+  user           User     @relation(fields: [id], references: [id], onDelete: Cascade)
+  full_name      String?
+  phone          String?  @unique
+  avatar_url     String?
+  nrc            String?
+  nrc_url        String?
+  gender         String?
+  postal_code    String?
+  location       String?
+  is_active      Boolean  @default(true)
+  is_blacklist   Boolean  @default(false)
+  expo_push_token String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model Car {
   id           Int       @id @default(autoincrement())
+  ownerId      Int?
+  owner        User?     @relation(fields: [ownerId], references: [id])
   brand        String
   model        String
   year         Int
+  car_type     String?
+  car_number   String?   @unique
   pricePerDay  Float
-  isAvailable  Boolean   @default(true)
+  seats        Int?
+  has_ac       Boolean?  @default(false)
+  status       String?   @default("Available")
+  postal_code  String?
+  location     String?
+  description  String?
   bookings     Booking[]
+  carImages    CarImage[]
+  reviews      Review[]
+  wishlistItems Wishlist[]
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+}
+
+model CarImage {
+  id         Int      @id @default(autoincrement())
+  carId      Int
+  car        Car      @relation(fields: [carId], references: [id])
+  image_url  String
+  is_primary Boolean  @default(false)
+  createdAt  DateTime @default(now())
 }
 
 model Driver {
@@ -69,60 +103,98 @@ model Driver {
   nrc            String?
   postal_code    String?
   location       String?
+  leave          Boolean   @default(false)
+
   bookings       Booking[]
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 }
 
 model Booking {
-  id        Int      @id @default(autoincrement())
-  startDate DateTime
-  endDate   DateTime
-  totalPrice Float
-  status    BookingStatus   @default(PENDING) 
-  
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
-  
-  carId     Int
-  car       Car      @relation(fields: [carId], references: [id])
+  id              Int      @id @default(autoincrement())
+  startDate       DateTime
+  endDate         DateTime
+  totalPrice      Float
+  status          BookingStatus @default(PENDING)
+  pickupTime      String?
+  dropoffTime     String?
+  pickupLocation  String?
+  dropoffLocation String?
+  note            String?
+  isRead          Boolean  @default(false)
 
-  driverId  Int?
-  driver    Driver?  @relation(fields: [driverId], references: [id])
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id])
 
-  notifications    Notification[]
-  inquiries  Inquiry[]
+  ownerId         Int?
+  owner           User?    @relation("OwnerBookings", fields: [ownerId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  carId           Int
+  car             Car      @relation(fields: [carId], references: [id])
+
+  driverId        Int?
+  driver          Driver?  @relation(fields: [driverId], references: [id])
+
+  notifications   Notification[]
+  inquiries       Inquiry[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
-// 👈 Add the Message model here
+model Review {
+  id        Int      @id @default(autoincrement())
+  carId     Int
+  car       Car      @relation(fields: [carId], references: [id])
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+model Wishlist {
+  id          Int      @id @default(autoincrement())
+  customerId  Int
+  customer    User     @relation(fields: [customerId], references: [id])
+  carId       Int
+  car         Car      @relation(fields: [carId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@unique([customerId, carId])
+}
+
 model Message {
   id         Int      @id @default(autoincrement())
   content    String
-  createdAt  DateTime @default(now())
+  isRead     Boolean  @default(false)
 
   senderId   Int
   sender     User     @relation("SentMessages", fields: [senderId], references: [id])
 
   receiverId Int
   receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  createdAt  DateTime @default(now())
 }
 
 model Notification {
   id          Int      @id @default(autoincrement())
   title       String
   body        String
-  type        String   // ဥပမာ - "UPCOMING_REMINDER", "BOOKING_CONFIRMED"
+  type        String
   isRead      Boolean  @default(false)
-  
+  referenceId String?
+
   userId      Int
-  user        User     @relation(fields: [userId], references: [id])
-  
-  bookingId   Int?     
+  user        User     @relation("ReceivedNotifications", fields: [userId], references: [id])
+
+  senderId    Int?
+  sender      User?    @relation("SentNotifications", fields: [senderId], references: [id])
+
+  bookingId   Int?
   booking     Booking? @relation(fields: [bookingId], references: [id])
-  
+
   createdAt   DateTime @default(now())
 }
 
@@ -136,12 +208,49 @@ model Inquiry {
   bookingId       Int?
   booking         Booking? @relation(fields: [bookingId], references: [id])
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  table_name String
+  record_id  Int
+  action     String
+  old_value  Json?
+  new_value  Json?
+  changed_by Int?
+  changedBy  User?    @relation(fields: [changed_by], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model DailyReport {
+  id              Int      @id @default(autoincrement())
+  ownerId         Int
+  owner           User     @relation(fields: [ownerId], references: [id])
+  total_completed Int?
+  booking_ids     Json?
+  report_url      String?
+  status          String?
+  isRead          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+}
+
+model VerificationToken {
+  id        Int       @id @default(autoincrement())
+  email     String
+  token     String
+  type      String    // "signup" | "password_reset"
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+}
 
 enum Role {
-  USER
-  ADMIN
+  renter
+  car_owner
+  admin
 }
 
 enum BookingStatus {
@@ -151,4 +260,3 @@ enum BookingStatus {
   CANCELLED
   COMPLETED
 }
-

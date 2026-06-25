@@ -8,9 +8,9 @@ import "../global.css"; // Must be the very first import for NativeWind v4
 
 import { GluestackUIProvider } from "@/components/ui/gluestack-ui-provider";
 import registerForPushNotificationsAsync from "@/hooks/get-push-noti-token";
+import { apiClient } from "@/lib/axios";
 import { queryClient } from "@/lib/queryClient";
-import { supabase } from "@/lib/supabase";
-import { useAuthStore } from "@/store/useAuthStore"; // Import your store
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   markNotificationIdProcessed,
   setupBadgeRealtime,
@@ -84,7 +84,7 @@ export default function RootLayout() {
     // app closed app from notification to open app, handle it here
     if (lastResponse && lastResponse.notification.request.content.data.url) {
       const url = lastResponse.notification.request.content.data.url as string;
-      const path = url.replace("carrentalpractice://", "/");
+      const path = url.replace("carrentalv2://", "/");
 
       // if router ready or not
       setTimeout(() => {
@@ -101,14 +101,11 @@ export default function RootLayout() {
         async (response) => {
           const url = response.notification.request.content.data.url as string;
           if (url) {
-            const path = url.replace("carrentalpractice://", "/");
+            const path = url.replace("carrentalv2://", "/");
             const data = response.notification.request.content.data;
             const notification_id = data?.notification_id;
             if (notification_id) {
-              await supabase
-                .from("notifications")
-                .update({ is_read: true })
-                .eq("id", notification_id);
+              await apiClient.patch(`/notifications/${notification_id}/read`).catch(() => {});
             }
 
             setTimeout(() => {

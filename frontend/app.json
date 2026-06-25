@@ -1,19 +1,19 @@
 {
   "expo": {
     "name": "Car Rental App",
-    "slug": "car-rental-practice",
+    "slug": "car-rental-v2",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/app-icon.png",
-    "scheme": "carrentalpractice",
+    "scheme": "carrentalv2",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
     "android": {
-      "package": "com.ayechanaungdev.carrentalpractice",
-      "googleServicesFile": "./google-services.json",
+      "package": "com.ayechanaungdev.carrentalv2",
+      // "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -70,7 +70,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "63a651ce-524d-4b70-b118-79fa1c80e597"
+        "projectId": "2bed1f62-7fba-4e8b-86f2-22a043694f48"
       }
     }
   }

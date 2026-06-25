@@ -29,7 +29,6 @@ export class UsersRepository extends BaseRepository<any> {
         password: true,
         role: true,
         refreshToken: true,
-        is_active: true,
       },
     });
   }
@@ -70,7 +69,14 @@ export class UsersRepository extends BaseRepository<any> {
 
   async findActiveUsers(): Promise<any[]> {
     return this.prisma.user.findMany({
-      where: { is_active: true },
+      where: { profile: { is_active: true } },
+      include: { profile: true },
+    });
+  }
+
+  async findByPhone(phone: string): Promise<any | null> {
+    return this.prisma.profile.findUnique({
+      where: { phone },
     });
   }
 }

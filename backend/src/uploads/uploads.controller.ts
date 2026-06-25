@@ -11,23 +11,23 @@ export class UploadsController {
 
   @Post()
   async upload(@Body() body: CreateUploadDto) {
-    const { filename, contentBase64, contentType, bucket } = body;
+    const { filename, contentBase64, contentType, folder } = body;
     return this.uploadsService.uploadFromBase64(
       filename,
       contentBase64,
       contentType,
-      bucket,
+      folder,
     );
   }
 
   @Post('signed-url')
   async signedUrl(@Body() body: GetSignedUrlDto) {
-    const { filename, contentType, expiresInSeconds, bucket } = body;
+    const { filename, contentType, expiresInSeconds, folder } = body;
     return this.uploadsService.getSignedUrl(
       filename,
       expiresInSeconds,
       contentType,
-      bucket,
+      folder,
     );
   }
 }

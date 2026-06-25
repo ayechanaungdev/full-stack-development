@@ -35,7 +35,7 @@ import { ScrollView as RNScrollView } from "@/components/ui/scroll-view";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
 import townshipsData from "@/constants/yangon-townships.json";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import tailwindConfig from "@/tailwind.config";
 import { CARD_SHADOW } from "@/utils/dashboardHelpers";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
@@ -141,22 +141,20 @@ export default function OwnerCarDetails({ carId }: OwnerCarDetailsProps) {
     queryFn: async () => {
       if (!carId) throw new Error("Car ID is required");
 
-      const { data: carData, error: carError } = await supabase
-        .from("cars")
-        .select("*")
-        .eq("id", carId)
-        .single();
+      const response = await apiClient.get(`/cars/${carId}`);
+      const carData = response.data;
 
-      if (carError) throw carError;
+      const car: Car = {
+        ...carData,
+        price_per_day: carData.pricePerDay,
+        postal_code: carData.postal_code || null,
+      };
 
-      const { data: imageData, error: imageError } = await supabase
-        .from("car_images")
-        .select("image_url")
-        .eq("car_id", carId);
+      const images = (carData.carImages || []).map((img: any) => ({
+        image_url: img.image_url,
+      })) as CarImage[];
 
-      if (imageError) throw imageError;
-
-      return { car: carData as Car, images: (imageData || []) as CarImage[] };
+      return { car, images };
     },
     enabled: !!carId,
   });

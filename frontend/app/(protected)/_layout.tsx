@@ -6,14 +6,18 @@ import { Redirect, Stack } from 'expo-router';
 import React, { useEffect } from 'react';
 
 export default function ProtectedLayout() {
-  const { session, isLoading } = useAuthStore();
+  // OLD: destructured only session; used session.user.id for push notifications
+  // const { session, isLoading } = useAuthStore();
+  // useEffect(() => { if (session?.user?.id) { registerForPushNotificationsAsync(session.user.id); } }, [session]);
+  // NEW: also destructure user (backend auth stores user separately)
+  const { session, user, isLoading } = useAuthStore();
 
   //for push notification token registration
 useEffect(() => {
-  if (session?.user?.id) {
-    registerForPushNotificationsAsync(session.user.id);
+  if (user?.id) {
+    registerForPushNotificationsAsync(user.id);
   }
-}, [session]);
+}, [user]);
 //******************************************************* */
 
   if (isLoading) {

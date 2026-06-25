@@ -8,11 +8,17 @@ import { BookingsModule } from './bookings/bookings.module';
 import { AuthModule } from './auth/auth.module';
 import { ChatModule } from './chat/chat.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { InquiriesModule } from './inquiries/inquiries.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronModule } from './cron/cron.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { DriversModule } from './drivers/drivers.module';
+import { WishlistModule } from './wishlist/wishlist.module';
+import { MailModule } from './mail/mail.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { ReviewsModule } from './reviews/reviews.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -23,11 +29,17 @@ import { DriversModule } from './drivers/drivers.module';
     AuthModule,
     ChatModule,
     FirebaseModule,
+    CloudinaryModule,
     UploadsModule,
     DriversModule,
+    WishlistModule,
+    MailModule,
     InquiriesModule,
     ScheduleModule.forRoot(),
-    CronModule, // 👈 Schedule စနစ်ကို ဖွင့်လိုက်ပါပြီ
+    CronModule,
+    NotificationsModule,
+    ReviewsModule,
+    ReportsModule,
   ],
   controllers: [AppController], // Routes go here
   providers: [AppService], // Business logic goes here

@@ -9,6 +9,9 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { CreateUserDto } from 'src/users/dto/create-user.dto';
 import { UsersService } from 'src/users/users.service';
 import { JwtAuthGuard } from './jwt.guard';
@@ -27,9 +30,36 @@ export class AuthController {
     return this.authService.login(loginDto);
   }
 
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  googleLogin(@Body() googleLoginDto: GoogleLoginDto) {
+    return this.authService.googleLogin(googleLoginDto);
+  }
+
   @Post('signup')
   async signup(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+    const user = await this.usersService.create(createUserDto);
+    // Auto-send verification email after signup
+    await this.authService.sendVerificationCode(createUserDto.email, 'signup').catch(() => null);
+    return user;
+  }
+
+  @Post('send-verification')
+  @HttpCode(HttpStatus.OK)
+  sendVerification(@Body() body: { email: string; type?: 'signup' | 'password_reset' }) {
+    return this.authService.sendVerificationCode(body.email, body.type || 'signup');
+  }
+
+  @Post('verify-otp')
+  @HttpCode(HttpStatus.OK)
+  verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
+    return this.authService.verifyOtp(verifyOtpDto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    return this.authService.resetPassword(resetPasswordDto);
   }
 
   // 1. Refresh Route (Protected by the Second Bouncer!)

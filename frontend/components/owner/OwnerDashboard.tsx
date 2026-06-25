@@ -8,6 +8,7 @@ import { Pressable } from "@/components/ui/pressable";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
+import { apiClient } from "@/lib/axios";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store/useAuthStore";
 import tailwindConfig from "@/tailwind.config";
@@ -84,127 +85,14 @@ export default function OwnerDashboard() {
     }
   };
 
-  /** Fetches and calculates earnings from completed bookings for various periods */
-  const fetchOwnerEarnings = async (ownerUserId: string) => {
-    const now = new Date();
-    const localYear = now.getFullYear();
-    const localMonth = now.getMonth();
-    const localDay = now.getDate();
-    const startOfYear = `${localYear}-01-01`;
 
-    const lastMonthYear = localMonth === 0 ? localYear - 1 : localYear;
-    const lastMonthIndex = localMonth === 0 ? 11 : localMonth - 1;
-
-    const { data, error } = await supabase
-      .from("bookings")
-      .select(`total_price, end_date, status, cars!inner (owner_id)`)
-      .eq("cars.owner_id", ownerUserId)
-      .eq("status", "completed")
-      .gte("end_date", startOfYear);
-
-    if (error) {
-      console.error("Earnings fetch error:", error);
-      return null;
-    }
-
-    // Today, This Month, Last Month, This Year
-    return (data as any[]).reduce(
-      (acc, b) => {
-        const bookingTotal = Number(b.total_price) || 0;
-        const bDate = new Date(b.end_date);
-        const bYear = bDate.getFullYear();
-        const bMonth = bDate.getMonth();
-        const bDay = bDate.getDate();
-
-        acc.total += bookingTotal;
-        acc.thisYear += bookingTotal;
-        if (bYear === localYear && bMonth === localMonth && bDay === localDay)
-          acc.today += bookingTotal;
-        if (bYear === localYear && bMonth === localMonth)
-          acc.thisMonth += bookingTotal;
-        if (bYear === lastMonthYear && bMonth === lastMonthIndex)
-          acc.lastMonth += bookingTotal;
-
-        return acc;
-      },
-      { total: 0, today: 0, thisMonth: 0, lastMonth: 0, thisYear: 0 },
-    );
-  };
-
-  /** Fetches total counts for the 'Business Overview' section (Cars, Active Rentals, Drivers) */
-  const fetchBusinessOverview = async (ownerId: string) => {
-    try {
-      const { count: carCount } = await supabase
-        .from("cars")
-        .select("*", { count: "exact", head: true })
-        .eq("owner_id", ownerId);
-
-      const { count: activeCount } = await supabase
-        .from("bookings")
-        .select("id, cars!inner(owner_id)", { count: "exact", head: true })
-        .eq("cars.owner_id", ownerId)
-        .eq("status", "approved");
-
-      const { count: driverCount } = await supabase
-        .from("drivers")
-        .select("*", { count: "exact", head: true })
-        .eq("owner_id", ownerId);
-
-      return {
-        cars: carCount || 0,
-        activeRentals: activeCount || 0,
-        drivers: driverCount || 0,
-      };
-    } catch {
-      return { cars: 0, activeRentals: 0, drivers: 0 };
-    }
-  };
-
-  /** Fetches current day's approved bookings to display in the list */
-  const fetchTodayTrips = async (ownerId: string) => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    const { data, error } = await supabase
-      .from("bookings")
-      .select(
-        `id, pickup_location, status, start_date, end_date, cars!inner (id, brand, model, owner_id, car_images(image_url)), drivers (name)`,
-      )
-      .eq("cars.owner_id", ownerId)
-      .eq("status", "approved")
-      .lte("start_date", todayStr)
-      .gte("end_date", todayStr)
-      .order("start_date", { ascending: true });
-
-    return error ? [] : data || [];
-  };
-
-  /** Fetches car statuses to calculate Available vs Unavailable counts */
-  const fetchFleetStatus = async (ownerId: string) => {
-    const { data, error } = await supabase
-      .from("cars")
-      .select("status")
-      .eq("owner_id", ownerId);
-    if (error) return { available: 0, unavailable: 0 };
-
-    const availableCount = data.filter(
-      (car) => car.status?.toLowerCase() === "available",
-    ).length;
-    return {
-      available: availableCount,
-      unavailable: data.length - availableCount,
-    };
-  };
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["owner_dashboard", userId],
     queryFn: async () => {
       if (!userId) throw new Error("User ID is required");
-      const [earnings, overview, trips, fleet] = await Promise.all([
-        fetchOwnerEarnings(userId),
-        fetchBusinessOverview(userId),
-        fetchTodayTrips(userId),
-        fetchFleetStatus(userId),
-      ]);
-      return { earnings, overview, trips, fleet };
+      const response = await apiClient.get(`/bookings/owner-dashboard`);
+      return response.data;
     },
     enabled: !!userId,
   });
@@ -379,12 +267,12 @@ export default function OwnerDashboard() {
               todayTrips.slice(0, 2).map((trip: any, index: number) => (
                 <VStack key={trip.id}>
                   <TripItem
-                    model={`${trip.cars.brand} ${trip.cars.model}`}
-                    driver={trip.drivers?.name || "No Driver"}
-                    location={trip.pickup_location || "Not set"}
+                    model={trip.Car ? `${trip.Car.brand} ${trip.Car.model}` : "Unknown Car"}
+                    driver={trip.Driver?.name || "No Driver"}
+                    location={trip.pickupLocation || "Not set"}
                     img={
-                      trip.cars.car_images?.[0]?.image_url
-                        ? { uri: trip.cars.car_images[0].image_url }
+                      trip.Car?.CarImage?.[0]?.image_url
+                        ? { uri: trip.Car.CarImage[0].image_url }
                         : null
                     }
                   />

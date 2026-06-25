@@ -13,7 +13,7 @@ import { Text } from "@/components/ui/text";
 import { formatCarRatings, useSearchCars } from "@/hooks/useSearchCar";
 import { useWishlist } from "@/hooks/useWishlist";
 
-import { supabase } from "@/lib/supabase";
+import { carService } from "@/lib/serviceAdapters";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronUp } from "lucide-react-native";
@@ -120,57 +120,24 @@ export default function ExploreCars() {
   const handleSearch = useCallback(async () => {
     try {
       setIsSearching(true);
-      let query = supabase
-        .from("cars")
-        .select(
-          `
-          id, brand, model, price_per_day, seats, car_type,
-          location, postal_code, status, car_number,
-          car_images ( image_url ),
-          reviews ( rating )
-        `,
-        )
-        .eq("status", "Available")
-        .gte("price_per_day", priceRange[0])
-        .lte("price_per_day", priceRange[1]);
+
+      const params: Record<string, any> = {
+        status: "Available",
+        priceMin: priceRange[0],
+        priceMax: priceRange[1],
+      };
 
       if (selectedTownship) {
-        query = query.eq(
-          "postal_code",
-          String(selectedTownship.postalCode).trim(),
-        );
+        params.postal_code = String(selectedTownship.postalCode).trim();
       }
-
-      const { data, error } = await query;
-
-      if (error) {
-        return;
-      }
-
-      let filtered = data || [];
 
       if (pickupDate && returnDate) {
-        const { data: bookings } = await supabase
-          .from("bookings")
-          .select("car_id, start_date, end_date")
-          .in("status", ["approved", "pending"])
-          .lte("start_date", returnDate)
-          .gte("end_date", pickupDate);
-
-        filtered = filtered.filter((car: any) => {
-          const conflict = bookings?.some((booking: any) => {
-            if (booking.car_id !== car.id) return false;
-            const bookingStart = new Date(booking.start_date);
-            const bookingEnd = new Date(booking.end_date);
-            const pick = new Date(pickupDate);
-            const ret = new Date(returnDate);
-            return pick <= bookingEnd && ret >= bookingStart;
-          });
-          return !conflict;
-        });
+        params.startDate = pickupDate;
+        params.endDate = returnDate;
       }
 
-      const formatted = formatCarRatings(filtered);
+      const result = await carService.getCars(params);
+      const formatted = formatCarRatings(result.data ?? []);
       setCars(formatted);
     } catch (err) {
       console.error(err);

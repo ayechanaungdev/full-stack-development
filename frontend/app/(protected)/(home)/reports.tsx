@@ -6,7 +6,7 @@ import { HStack } from "@/components/ui/hstack";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
 import { adjustBadgeCount, useBadgeActions } from "@/store/useBadgeStore";
 import tailwindConfig from "@/tailwind.config";
@@ -119,36 +119,25 @@ const ReportsHistoryScreen = () => {
   useFocusEffect(
     useCallback(() => {
       const markAsRead = async () => {
-        if (!user) return;
+        if (!user || !profile?.id) return;
 
-        const { data: updatedReports, error } = await supabase
-          .from("daily_reports")
-          .update({ is_read: true })
-          .select("id")
-          .eq("owner_id", user.id)
-          .eq("is_read", false);
+        try {
+          // Fetch all unread reports for this owner
+          const reportsResp = await apiClient.get("/reports", {
+            params: { limit: 100, startDate: "2020-01-01", endDate: new Date().toISOString().split("T")[0] },
+          });
+          const reportsList = reportsResp.data?.data || [];
+          const unreadReports = reportsList.filter((r: any) => !r.isRead);
 
-        if (!error) {
-          const reportReadCount = updatedReports?.length ?? 0;
-          if (reportReadCount > 0) {
-            adjustBadgeCount(user.id, "reports", -reportReadCount);
+          if (unreadReports.length > 0) {
+            // Mark each report as read
+            await Promise.all(
+              unreadReports.map((r: any) =>
+                apiClient.patch(`/reports/${r.id}/read`),
+              ),
+            );
 
-            const { data: updatedNotifications } = await supabase
-              .from("notifications")
-              .update({ is_read: true })
-              .select("id")
-              .eq("receiver_id", user.id)
-              .eq("type", "system")
-              .eq("is_read", false);
-
-            const notificationReadCount = updatedNotifications?.length ?? 0;
-            if (notificationReadCount > 0) {
-              adjustBadgeCount(
-                user.id,
-                "notifications",
-                -notificationReadCount,
-              );
-            }
+            adjustBadgeCount(user.id, "reports", -unreadReports.length);
 
             queryClient.setQueryData(
               ["daily_reports", profile?.id, "today", todayDate],
@@ -161,7 +150,7 @@ const ReportsHistoryScreen = () => {
               (oldData: any) => markReportsReadInInfiniteCache(oldData),
             );
           }
-        }
+        } catch {}
       };
 
       markAsRead();
@@ -185,27 +174,31 @@ const ReportsHistoryScreen = () => {
     queryKey: ["daily_reports", profile?.id, "list", start, end],
     queryFn: async ({ pageParam = 0 }) => {
       const page = Number(pageParam);
-      const from = page * REPORTS_PAGE_SIZE;
-      const to = from + REPORTS_PAGE_SIZE - 1;
 
-      const { data, error, count } = await supabase
-        .from("daily_reports")
-        .select("*", { count: "exact" })
-        .eq("owner_id", profile?.id)
-        .gte("created_at", startBound)
-        .lte("created_at", endBound)
-        .order("created_at", { ascending: false })
-        .range(from, to);
+      const response = await apiClient.get("/reports", {
+        params: {
+          page: page + 1,
+          limit: REPORTS_PAGE_SIZE,
+          startDate: start,
+          endDate: end,
+        },
+      });
 
-      if (error) throw error;
-      const totalCount = count ?? 0;
-      const nextPage = to + 1 < totalCount ? page + 1 : undefined;
+      const { data, total } = response.data;
+      const records = (data || []).map((item: any) => ({
+        id: String(item.id),
+        total_completed: item.total_completed || 0,
+        booking_ids: item.booking_ids || [],
+        status: item.status || "",
+        is_read: item.isRead || false,
+        created_at: item.createdAt,
+      })) as ReportRecord[];
 
-      return {
-        records: data as ReportRecord[],
-        count: totalCount,
-        nextPage,
-      };
+      const totalCount = total ?? 0;
+      const loadedCount = (page + 1) * REPORTS_PAGE_SIZE;
+      const nextPage = loadedCount < totalCount ? page + 1 : undefined;
+
+      return { records, count: totalCount, nextPage };
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextPage,
@@ -227,18 +220,24 @@ const ReportsHistoryScreen = () => {
   } = useQuery({
     queryKey: ["daily_reports", profile?.id, "today", todayDate],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("daily_reports")
-        .select("*")
-        .eq("owner_id", profile?.id)
-        .gte("created_at", todayStartBound)
-        .lte("created_at", todayEndBound)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-      return data as ReportRecord | null;
+      const today = new Date().toISOString().split("T")[0];
+      const response = await apiClient.get("/reports", {
+        params: {
+          limit: 1,
+          startDate: today,
+          endDate: today,
+        },
+      });
+      const data = response.data?.data?.[0];
+      if (!data) return null;
+      return {
+        id: String(data.id),
+        total_completed: data.total_completed || 0,
+        booking_ids: data.booking_ids || [],
+        status: data.status || "",
+        is_read: data.isRead || false,
+        created_at: data.createdAt,
+      } as ReportRecord;
     },
     enabled: !!profile?.id,
   });
@@ -326,35 +325,9 @@ const ReportsHistoryScreen = () => {
               key={todayReport.id}
               onPress={async () => {
                 if (user?.id && !todayReport.is_read) {
-                  const { data: updatedReports } = await supabase
-                    .from("daily_reports")
-                    .update({ is_read: true })
-                    .select("id")
-                    .eq("id", todayReport.id)
-                    .eq("is_read", false);
-
-                  const reportReadCount = updatedReports?.length ?? 0;
-                  if (reportReadCount > 0) {
-                    adjustBadgeCount(user.id, "reports", -reportReadCount);
-
-                    const { data: updatedNotifications } = await supabase
-                      .from("notifications")
-                      .update({ is_read: true })
-                      .select("id")
-                      .eq("receiver_id", user.id)
-                      .eq("reference_id", todayReport.id)
-                      .eq("type", "system")
-                      .eq("is_read", false);
-
-                    const notificationReadCount =
-                      updatedNotifications?.length ?? 0;
-                    if (notificationReadCount > 0) {
-                      adjustBadgeCount(
-                        user.id,
-                        "notifications",
-                        -notificationReadCount,
-                      );
-                    }
+                  try {
+                    await apiClient.patch(`/reports/${todayReport.id}/read`);
+                    adjustBadgeCount(user.id, "reports", -1);
 
                     queryClient.setQueryData(
                       ["daily_reports", profile?.id, "today", todayDate],
@@ -367,7 +340,7 @@ const ReportsHistoryScreen = () => {
                       (oldData: any) =>
                         markReportsReadInInfiniteCache(oldData, todayReport.id),
                     );
-                  }
+                  } catch {}
                 }
                 router.push(`/reports/${todayReport.id}`);
               }}
@@ -488,50 +461,24 @@ const ReportsHistoryScreen = () => {
             <TouchableOpacity
               onPress={async () => {
                 if (user?.id && !report.is_read) {
-                  const { data: updatedReports } = await supabase
-                    .from("daily_reports")
-                    .update({ is_read: true })
-                    .select("id")
-                    .eq("id", report.id)
-                    .eq("is_read", false);
+                  try {
+                    await apiClient.patch(`/reports/${report.id}/read`);
+                    adjustBadgeCount(user.id, "reports", -1);
 
-                  const reportReadCount = updatedReports?.length ?? 0;
-                  if (reportReadCount > 0) {
-                    adjustBadgeCount(user.id, "reports", -reportReadCount);
+                    queryClient.setQueryData(
+                      ["daily_reports", profile?.id, "today", todayDate],
+                      (oldData: ReportRecord | null | undefined) =>
+                        oldData?.id === report.id
+                          ? { ...oldData, is_read: true }
+                          : oldData,
+                    );
 
-                    const { data: updatedNotifications } = await supabase
-                      .from("notifications")
-                      .update({ is_read: true })
-                      .select("id")
-                      .eq("receiver_id", user.id)
-                      .eq("reference_id", report.id)
-                      .eq("type", "system")
-                      .eq("is_read", false);
-
-                    const notificationReadCount =
-                      updatedNotifications?.length ?? 0;
-                    if (notificationReadCount > 0) {
-                      adjustBadgeCount(
-                        user.id,
-                        "notifications",
-                        -notificationReadCount,
-                      );
-                    }
-                  }
-
-                  queryClient.setQueryData(
-                    ["daily_reports", profile?.id, "today", todayDate],
-                    (oldData: ReportRecord | null | undefined) =>
-                      oldData?.id === report.id
-                        ? { ...oldData, is_read: true }
-                        : oldData,
-                  );
-
-                  queryClient.setQueriesData(
-                    { queryKey: ["daily_reports", profile?.id, "list"] },
-                    (oldData: any) =>
-                      markReportsReadInInfiniteCache(oldData, report.id),
-                  );
+                    queryClient.setQueriesData(
+                      { queryKey: ["daily_reports", profile?.id, "list"] },
+                      (oldData: any) =>
+                        markReportsReadInInfiniteCache(oldData, report.id),
+                    );
+                  } catch {}
                 }
                 router.push(`/reports/${report.id}`);
               }}

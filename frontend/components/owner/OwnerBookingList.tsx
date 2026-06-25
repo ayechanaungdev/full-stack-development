@@ -22,7 +22,8 @@ import { Pressable } from "@/components/ui/pressable";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
+import { useAuthStore } from "@/store/useAuthStore";
 import tailwindConfig from "@/tailwind.config";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -32,7 +33,7 @@ import resolveConfig from "tailwindcss/resolveConfig";
 import { useToastStore } from "@/store/useToastStore";
 import { Input, InputField, InputSlot } from "../ui/input";
 type OwnerBookingListProps = {
-  ownerId: string;
+  ownerId?: string;
   initialStatus?: string;
 };
 type BookingStatus =
@@ -85,12 +86,14 @@ const getSearchTerms = (search: string) =>
   search.trim().toLowerCase().split(/\s+/).filter(Boolean);
 
 export default function OwnerBookingList({
-  ownerId,
+  ownerId: _ownerId,
   initialStatus = "all",
 }: OwnerBookingListProps) {
   const [search, setSearch] = useState("");
   const { status } = useLocalSearchParams() as { status?: string };
   const router = useRouter();
+  const currentUser = useAuthStore((s) => s.user);
+  const identityId = _ownerId || currentUser?.id?.toString() || "default";
 
   const [selectedStatus, setSelectedStatus] = useState<BookingStatus>(
     (initialStatus as BookingStatus) || "all",
@@ -212,6 +215,36 @@ export default function OwnerBookingList({
     return !isNaN(new Date(dateStr).getTime());
   };
 
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // DIAGNOSTIC: direct fetch to debug 0 results
+  useEffect(() => {
+    (async () => {
+      try {
+        const debugResp = await apiClient.get('/bookings/debug');
+        console.log('[DIAG] /bookings/debug:', JSON.stringify(debugResp.data));
+      } catch (e: any) {
+        const msg = `Debug error: ${e?.message} (status: ${e?.response?.status})`;
+        console.warn('[DIAG] /bookings/debug error:', msg);
+        setFetchError(msg);
+      }
+      try {
+        const allResp = await apiClient.get('/bookings', { params: { page: 1, limit: 5 } });
+        console.log('[DIAG] /bookings response:', JSON.stringify(allResp.data).substring(0, 1000));
+        const respData = allResp.data as any;
+        if (respData?.total === 0 && respData?.data?.length === 0) {
+          setFetchError('API returned 0 bookings. Check Metro console for /bookings/debug result.');
+        } else {
+          setFetchError(null);
+        }
+      } catch (e: any) {
+        const msg = `Bookings error: ${e?.message} (status: ${e?.response?.status})`;
+        console.warn('[DIAG] /bookings error:', msg, e?.response?.data);
+        setFetchError(msg);
+      }
+    })();
+  }, []);
+
   const {
     data,
     isLoading: loading,
@@ -223,103 +256,78 @@ export default function OwnerBookingList({
   } = useInfiniteQuery({
     queryKey: [
       "owner_bookings",
-      ownerId,
+      identityId,
       "list",
       selectedStatus,
       startDate,
       endDate,
     ],
     queryFn: async ({ pageParam = 0 }) => {
-      if (!ownerId) return { bookings: [], count: 0 } as BookingsPage;
+      if (!currentUser?.id) return { bookings: [], count: 0 } as BookingsPage;
 
       const page = Number(pageParam);
-      const from = page * BOOKINGS_PAGE_SIZE;
-      const to = from + BOOKINGS_PAGE_SIZE - 1;
 
-      let query = supabase
-        .from("bookings")
-        .select(
-          `
-          id,
-          customer_id,
-          car_id,
-          start_date,
-          end_date,
-          pickup_time,
-          dropoff_time,
-          status,
-          created_at,
-  
-          cars (
-            brand,
-            model,
-            car_number,
-            car_images (
-              image_url,
-              is_primary
-            )
-          ),
-  
-          customer:profiles!bookings_customer_id_fkey (
-            full_name
-          )
-        `,
-          { count: "exact" },
-        )
-        .eq("owner_id", ownerId);
+      const params: any = {
+        page: page + 1,
+        limit: BOOKINGS_PAGE_SIZE,
+      };
 
       if (selectedStatus !== "all") {
-        query = query.eq("status", selectedStatus);
+        params.status = selectedStatus;
       }
 
-      if (isValidDate(startDate)) {
-        query = query.gte("start_date", getDateKey(startDate));
-      }
+      // Temporarily disable date filter to check if data exists
+      // if (isValidDate(startDate)) {
+      //   params.startDate = getDateKey(startDate);
+      // }
+      // if (isValidDate(endDate)) {
+      //   params.endDate = getDateKey(endDate);
+      // }
 
-      if (isValidDate(endDate)) {
-        query = query.lte("end_date", getDateKey(endDate));
-      }
+      try {
+        console.log("[OwnerBookingList] user:", currentUser?.id, "role from store:", useAuthStore.getState().role);
+        console.log("[OwnerBookingList] params:", JSON.stringify(params));
+        const response = await apiClient.get("/bookings", { params });
+        console.log("[OwnerBookingList] response status:", response.status);
+        console.log("[OwnerBookingList] response data:", JSON.stringify(response.data).substring(0, 500));
+        const { data, total } = response.data;
+        console.log("[OwnerBookingList] total:", total, "data.length:", data?.length);
 
-      const { data, error, count } = await query
-        .order("created_at", { ascending: false })
-        .range(from, to);
+        const bookings = (data || []).map((item: any) => {
+          const carImages = item.car?.carImages || [];
+          const primaryImage =
+            carImages.find((img: any) => img.is_primary) || carImages[0];
 
-      if (error || !data) {
+          return {
+            id: String(item.id),
+            customer_id: String(item.userId),
+            car_id: String(item.carId),
+            start_date: item.startDate?.split("T")[0] || "",
+            end_date: item.endDate?.split("T")[0] || "",
+            pickup_time: item.pickupTime,
+            dropoff_time: item.dropoffTime,
+            status: item.status?.toLowerCase() || "",
+            created_at: item.createdAt,
+            car_name: `${item.car?.brand || "Unknown"} ${item.car?.model || "Car"}`,
+            car_number: item.car?.car_number || null,
+            renter_name: item.user?.profile?.full_name || item.user?.name || "Unknown Renter",
+            image_url: primaryImage?.image_url || null,
+          };
+        }) as BookingItem[];
+
+        const totalCount = total ?? 0;
+        const loadedCount = (page + 1) * BOOKINGS_PAGE_SIZE;
+        const nextPage = loadedCount < totalCount ? page + 1 : undefined;
+
+        return { bookings, count: totalCount, nextPage };
+      } catch (e) {
+        console.warn("[OwnerBookingList] fetch error:", e);
         return { bookings: [], count: 0 } as BookingsPage;
       }
-
-      const bookings = data.map((item: any) => {
-        const primaryImage =
-          item.cars?.car_images?.find((img: any) => img.is_primary) ||
-          item.cars?.car_images?.[0];
-
-        return {
-          id: item.id,
-          customer_id: item.customer_id,
-          car_id: item.car_id,
-
-          start_date: item.start_date,
-          end_date: item.end_date,
-          pickup_time: item.pickup_time,
-          dropoff_time: item.dropoff_time,
-          status: item.status,
-          created_at: item.created_at,
-
-          car_name: `${item.cars?.brand || "Unknown"} ${item.cars?.model || "Car"}`,
-          car_number: item.cars?.car_number || null,
-          renter_name: item.customer?.full_name || "Unknown Renter",
-          image_url: primaryImage?.image_url || null,
-        };
-      }) as BookingItem[];
-
-      const totalCount = count ?? 0;
-      const nextPage = to + 1 < totalCount ? page + 1 : undefined;
-
-      return { bookings, count: totalCount, nextPage };
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextPage,
-    enabled: !!ownerId,
+    enabled: !!currentUser?.id,
   });
 
   const allBookings = useMemo(
@@ -673,6 +681,11 @@ export default function OwnerBookingList({
           <Divider className="flex-1 ml-3 mt-1" />
         </HStack>
 
+        {fetchError && (
+          <Box className="bg-error-50 p-3 rounded-lg mb-2 mx-1">
+            <Text className="text-error-800 text-sm">{fetchError}</Text>
+          </Box>
+        )}
         {loading ? (
           <Center className="flex-1 mt-10">
             <Spinner size="large" />

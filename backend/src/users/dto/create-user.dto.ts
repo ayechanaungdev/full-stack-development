@@ -6,10 +6,11 @@ import {
   IsOptional,
 } from 'class-validator';
 
-// This matches our Prisma Enum
+// Matches Prisma Role enum (renter, car_owner, admin)
 enum UserRole {
-  USER = 'USER',
-  ADMIN = 'ADMIN',
+  renter = 'renter',
+  car_owner = 'car_owner',
+  admin = 'admin',
 }
 
 export class CreateUserDto {
@@ -64,7 +65,7 @@ export class CreateUserDto {
   @IsOptional()
   is_blacklist?: boolean;
 
-  @IsEnum(UserRole) // 👈 Only allows 'USER' or 'ADMIN'
+  @IsEnum(UserRole) // 👈 Only allows 'renter', 'car_owner', or 'admin'
   @IsOptional()
   role?: UserRole;
 }

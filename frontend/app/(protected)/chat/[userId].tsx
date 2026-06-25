@@ -11,7 +11,7 @@ import { Input, InputField } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useChatStore } from "@/store/useChatStore";
 import NetInfo from "@react-native-community/netinfo";
@@ -51,7 +51,9 @@ const formatDateSeparator = (dateString: string) => {
 export default function ChatScreen() {
   const headerHeight = useHeaderHeight();
   const { userId: otherUserId } = useLocalSearchParams<{ userId: string }>();
-  const { session } = useAuthStore();
+  // OLD: const { session } = useAuthStore(); — session.user.id for chat
+  // NEW: use user from store (backend auth stores user separately)
+  const { user: currentUser } = useAuthStore();
   const queryClient = useQueryClient();
   const {
     messages,
@@ -62,6 +64,8 @@ export default function ChatScreen() {
     subscribeToMessages,
     clearMessages,
     setActivePartnerId,
+    typingUsers,
+    emitTyping,
   } = useChatStore();
   const [inputText, setInputText] = useState("");
   const [partnerName, setPartnerName] = useState("");
@@ -75,57 +79,53 @@ export default function ChatScreen() {
   });
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partnerTyping = otherUserId ? typingUsers.has(otherUserId) : false;
 
   useEffect(() => {
     if (!otherUserId) return;
     const getPartner = async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("full_name, avatar_url, phone, location, postal_code")
-        .eq("id", otherUserId)
-        .single();
-      if (data?.full_name) setPartnerName(data.full_name);
-      if (data?.avatar_url) setPartnerAvatar(data.avatar_url);
-      if (data) {
-        setProfile({
-          name: data.full_name ?? "",
-          phone: data.phone ?? "",
-          location: data.location ?? "",
-          postal_code: data.postal_code ?? "",
-          avatarUrl: data.avatar_url ?? "",
-        });
-      }
+      try {
+        const response = await apiClient.get(`/users/${Number(otherUserId)}`);
+        const data = response.data;
+        if (data?.full_name) setPartnerName(data.full_name);
+        if (data?.avatar_url) setPartnerAvatar(data.avatar_url);
+        if (data) {
+          setProfile({
+            name: data.full_name ?? "",
+            phone: data.phone ?? "",
+            location: data.location ?? "",
+            postal_code: data.postal_code ?? "",
+            avatarUrl: data.avatar_url ?? "",
+          });
+        }
+      } catch {}
     };
     getPartner();
   }, [otherUserId]);
 
   useEffect(() => {
-    if (session?.user?.id && otherUserId) {
+    if (currentUser?.id && otherUserId) {
       const markConversationRead = async () => {
-        const messageReadCount = await markAsRead(session.user.id, otherUserId);
+        const messageReadCount = await markAsRead(otherUserId);
 
-        const { data: updatedNotifications } = await supabase
-          .from("notifications")
-          .update({ is_read: true })
-          .select("id")
-          .eq("receiver_id", session.user.id)
-          .eq("sender_id", otherUserId)
-          .eq("type", "message")
-          .eq("is_read", false);
-
-        const notificationReadCount = updatedNotifications?.length ?? 0;
+        let notificationReadCount = 0;
+        try {
+          const notiResponse = await apiClient.patch('/notifications/read-by-sender', {
+            senderId: Number(otherUserId),
+            type: 'message',
+          });
+          notificationReadCount = notiResponse.data?.count ?? 0;
+        } catch {} 
 
         if (notificationReadCount > 0 || messageReadCount > 0) {
           queryClient.setQueryData(
-            ["badge-counts", session.user.id],
+            ["badge-counts", currentUser.id],
             (oldData: any) => {
               if (!oldData) return oldData;
               return {
                 ...oldData,
-                notifications: Math.max(
-                  0,
-                  oldData.notifications - notificationReadCount,
-                ),
+                notifications: Math.max(0, oldData.notifications - notificationReadCount),
                 messages: Math.max(0, oldData.messages - messageReadCount),
               };
             },
@@ -135,9 +135,9 @@ export default function ChatScreen() {
 
       setActivePartnerId(otherUserId);
       clearMessages();
-      fetchMessages(session.user.id, otherUserId);
+      fetchMessages(String(currentUser.id), otherUserId);
       markConversationRead();
-      const unsubscribe = subscribeToMessages(session.user.id);
+      const unsubscribe = subscribeToMessages();
       return () => {
         unsubscribe();
         clearMessages();
@@ -145,7 +145,7 @@ export default function ChatScreen() {
       };
     }
   }, [
-    session?.user?.id,
+    currentUser?.id,
     otherUserId,
     fetchMessages,
     markAsRead,
@@ -161,29 +161,15 @@ export default function ChatScreen() {
   );
 
   const handleSend = async () => {
-    if (!inputText.trim() || !session?.user?.id || !otherUserId) return;
-    // 2. Check Network Connection
+    if (!inputText.trim() || !otherUserId) return;
     const state = await NetInfo.fetch();
     if (!state.isConnected) {
-      Alert.alert(
-        "No Internet Connection",
-        "Please check your network and try again.",
-        [{ text: "OK" }],
-      );
-      // Return early WITHOUT clearing inputText
+      Alert.alert("No Internet Connection", "Please check your network and try again.", [{ text: "OK" }]);
       return;
     }
     const content = inputText.trim();
-
-    try {
-      // Clear the input only AFTER confirming we are online
-      setInputText("");
-      await sendMessage(session.user.id, otherUserId, content);
-    } catch {
-      // If the database insert fails (e.g., server down), put the text back
-      setInputText(content);
-      Alert.alert("Error", "Failed to send message. Please try again.");
-    }
+    setInputText("");
+    sendMessage(otherUserId, content);
   };
 
   return (
@@ -259,7 +245,7 @@ export default function ChatScreen() {
                 }}
                 keyboardShouldPersistTaps="handled"
                 renderItem={({ item, index }) => {
-                  const isMine = item.sender_id === session?.user?.id;
+                  const isMine = item.sender_id === String(currentUser?.id);
                   const showDateSeparator =
                     index === reversedMessages.length - 1 ||
                     new Date(
@@ -336,6 +322,15 @@ export default function ChatScreen() {
             )}
           </Box>
 
+          {/* ── Typing indicator ── */}
+          {partnerTyping && (
+            <Box className="px-4 py-1">
+              <Text size="xs" className="text-typography-400 italic">
+                {partnerName || "User"} is typing...
+              </Text>
+            </Box>
+          )}
+
           {/* ── Input bar ── */}
           <HStack
             space="sm"
@@ -349,7 +344,15 @@ export default function ChatScreen() {
                 placeholder="Type a message ..."
                 placeholderTextColor="#aaa"
                 value={inputText}
-                onChangeText={setInputText}
+                onChangeText={(text) => {
+                  setInputText(text);
+                  if (!otherUserId) return;
+                  if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+                  emitTyping(otherUserId, text.length > 0);
+                  typingTimerRef.current = setTimeout(() => {
+                    emitTyping(otherUserId, false);
+                  }, 2000);
+                }}
                 multiline
                 onSubmitEditing={handleSend}
                 returnKeyType="send"

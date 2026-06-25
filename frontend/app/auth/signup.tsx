@@ -1,5 +1,6 @@
 import nrcData from "@/constants/nrc-data.json";
 import yangonTownships from "@/constants/yangon-townships.json";
+import apiClient from "@/lib/axios";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useFocusEffect } from "@react-navigation/native";
@@ -239,6 +240,98 @@ export default function Signup() {
     return Object.keys(newErrors).length === 0;
   };
 
+  // ================================================================
+  // OLD SUPABASE SIGNUP (kept for reference)
+  // ================================================================
+  // const handleSignup = useCallback(async () => {
+  //   if (!validateForm()) return;
+  //   try {
+  //     setLoading(true);
+  //     const { data: emailStatus, error: rpcError } = await supabase.rpc(
+  //       "check_email_exists",
+  //       { email_to_check: form.email.trim().toLowerCase() },
+  //     );
+  //     if (emailStatus === 1) {
+  //       const { data: profileData } = await supabase
+  //         .from("profiles")
+  //         .select("is_blacklisted")
+  //         .eq("email", form.email.trim().toLowerCase())
+  //         .maybeSingle();
+  //       if (profileData?.is_blacklisted) {
+  //         setErrors((prev) => ({ ...prev, email: "The account is restricted." }));
+  //       } else {
+  //         setErrors((prev) => ({ ...prev, email: "This email is already registered and verified." }));
+  //       }
+  //       setLoading(false);
+  //       return;
+  //     }
+  //     const { data: existingPhone } = await supabase
+  //       .from("profiles")
+  //       .select("id")
+  //       .eq("phone", form.phone.trim())
+  //       .maybeSingle();
+  //     if (existingPhone) {
+  //       setErrors((prev) => ({ ...prev, phone: "This phone number is already registered." }));
+  //       setLoading(false);
+  //       return;
+  //     }
+  //     const fullNrc = `${form.nrcState}/${form.nrcTownship}(${form.nrcType})${form.nrcNumber}`;
+  //     const { data: existingNrc } = await supabase
+  //       .from("profiles")
+  //       .select("id")
+  //       .eq("nrc", fullNrc)
+  //       .maybeSingle();
+  //     if (existingNrc) {
+  //       setErrors((prev) => ({ ...prev, nrcNumber: "This NRC number is already registered." }));
+  //       setLoading(false);
+  //       return;
+  //     }
+  //     const { data, error } = await supabase.auth.signUp({
+  //       email: form.email.trim().toLowerCase(),
+  //       password: form.password,
+  //       options: {
+  //         data: {
+  //           full_name: form.fullName,
+  //           phone: form.phone,
+  //           nrc: fullNrc,
+  //           gender: form.gender,
+  //           postal_code: form.township,
+  //           location: form.address,
+  //           role: "renter",
+  //         },
+  //       },
+  //     });
+  //     if (error) throw error;
+  //     if (data.user) {
+  //       const isRecovery = emailStatus === 2;
+  //       setStatusModal({
+  //         visible: true,
+  //         title: isRecovery ? "Welcome Back!" : "Success",
+  //         message: isRecovery
+  //           ? "You have a pending registration! We've sent a new code. Please note your originally entered details will be kept."
+  //           : "Account created! Check your email for the 6-digit code.",
+  //         type: "success",
+  //       });
+  //     }
+  //   } catch (error: any) {
+  //     if (error.message && error.message.toLowerCase().includes("phone")) {
+  //       setErrors((prev) => ({ ...prev, phone: error.message }));
+  //     } else {
+  //       setStatusModal({
+  //         visible: true,
+  //         title: "Signup Failed",
+  //         message: error.message || "An unexpected error occurred.",
+  //         type: "error",
+  //       });
+  //     }
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // }, [form, avatarUri, router]);
+  // ================================================================
+  // END OLD SUPABASE SIGNUP
+  // ================================================================
+
   // Handle Signup Process
   const handleSignup = useCallback(async () => {
     if (!validateForm()) return;
@@ -246,119 +339,52 @@ export default function Signup() {
     try {
       setLoading(true);
 
-      const { data: emailStatus, error: rpcError } = await supabase.rpc(
-        "check_email_exists",
-        { email_to_check: form.email.trim().toLowerCase() },
-      );
-
-      // Status 1: Account exists and is already verified — check if blacklisted first
-      if (emailStatus === 1) {
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("is_blacklisted")
-          .eq("email", form.email.trim().toLowerCase())
-          .maybeSingle();
-
-        if (profileData?.is_blacklisted) {
-          setErrors((prev) => ({
-            ...prev,
-            email: "The account is restricted.",
-          }));
-        } else {
-          setErrors((prev) => ({
-            ...prev,
-            email: "This email is already registered and verified.",
-          }));
-        }
-        setLoading(false);
-        return;
-      }
-
-      // Note: If emailStatus is 2 (Unverified), we allow the signUp to proceed.
-      // Supabase will automatically update the user's metadata and resend the OTP.
-
-
-      // 2.5 Check if Phone exists in profiles
-      const { data: existingPhone } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("phone", form.phone.trim())
-        .maybeSingle();
-
-      if (existingPhone) {
-        setErrors((prev) => ({
-          ...prev,
-          phone: "This phone number is already registered.",
-        }));
-        setLoading(false);
-        return;
-      }
-
-      // 3. Check if NRC exists in profiles
       const fullNrc = `${form.nrcState}/${form.nrcTownship}(${form.nrcType})${form.nrcNumber}`;
-      const { data: existingNrc } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("nrc", fullNrc)
-        .maybeSingle();
 
-      if (existingNrc) {
-        setErrors((prev) => ({
-          ...prev,
-          nrcNumber: "This NRC number is already registered.",
-        }));
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase.auth.signUp({
+      await apiClient.post("/auth/signup", {
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        options: {
-          data: {
-            full_name: form.fullName,
-            phone: form.phone,
-            nrc: fullNrc,
-            gender: form.gender,
-            postal_code: form.township,
-            location: form.address,
-            role: "renter",
-          },
-        },
+        full_name: form.fullName,
+        phone: form.phone,
+        gender: form.gender,
+        nrc: fullNrc,
+        postal_code: form.township,
+        location: form.address,
+        role: "renter",
       });
 
-      if (error) throw error;
-
-      if (data.user) {
-        // --- Handle Unconfirmed Account Recovery ---
-        const isRecovery = emailStatus === 2;
-        setStatusModal({
-          visible: true,
-          title: isRecovery ? "Welcome Back!" : "Success",
-          message: isRecovery
-            ? "You have a pending registration! We've sent a new code. Please note your originally entered details will be kept."
-            : "Account created! Check your email for the 6-digit code.",
-          type: "success",
-        });
-      }
+      setStatusModal({
+        visible: true,
+        title: "Success",
+        message: "Account created! Check your email for the 6-digit code.",
+        type: "success",
+      });
     } catch (error: any) {
-      if (error.message && error.message.toLowerCase().includes("phone")) {
+      const rawMessage = error.response?.data?.message || error.message || "An unexpected error occurred.";
+      const message = Array.isArray(rawMessage) ? rawMessage.join(", ") : String(rawMessage);
+
+      if (message.toLowerCase().includes("phone")) {
         setErrors((prev) => ({
           ...prev,
-          phone: error.message,
+          phone: message,
+        }));
+      } else if (message.toLowerCase().includes("email")) {
+        setErrors((prev) => ({
+          ...prev,
+          email: message,
         }));
       } else {
         setStatusModal({
           visible: true,
           title: "Signup Failed",
-          message: error.message || "An unexpected error occurred.",
+          message,
           type: "error",
         });
       }
     } finally {
       setLoading(false);
     }
-  }, [form, avatarUri, router]);
+  }, [form, router]);
 
   return (
     <SafeAreaView style={{ flex: 1 }} className="bg-brand-50">

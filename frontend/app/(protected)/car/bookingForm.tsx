@@ -9,7 +9,8 @@ import { HStack } from "@/components/ui/hstack";
 import { Input, InputField } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { VStack } from "@/components/ui/vstack";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
+import { useAuthStore } from "@/store/useAuthStore";
 import { AntDesign, Entypo, Ionicons } from "@expo/vector-icons";
 import NetInfo from "@react-native-community/netinfo";
 import { usePreventRemove } from "@react-navigation/native";
@@ -107,27 +108,65 @@ export default function RentalBookingScreen() {
   // Load data when screen opens or ID changes
   useEffect(() => {
     if (id) fetchCar();
-    fetchUnavailableDates();
   }, [id]);
 
-  // Fetch car detail information from Supabase
+  // Fetch car detail information from backend
   const fetchCar = async () => {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("cars")
-      .select(
-        `
-      *,
-      profiles:owner_id ( id, full_name, avatar_url),
-      car_images ( id, image_url, is_primary )
-    `,
-      )
-      .eq("car_images.is_primary", true)
-      .eq("id", id)
-      .single();
+    try {
+      const response = await apiClient.get(`/cars/${id}`);
+      const data = response.data;
 
-    if (error || !data) {
+      if (!data) {
+        setLoading(false);
+        setAlert({
+          visible: true,
+          type: "error",
+          title: "Unavailable",
+          message: "The selected car is no longer available.",
+          actions: [{ text: "OK", onPress: () => router.replace("/search") }],
+        });
+        return;
+      }
+
+      const mapped = {
+        ...data,
+        price_per_day: data.pricePerDay,
+        owner_id: data.ownerId,
+        car_images: data.carImages,
+        status: data.status,
+      };
+
+      setCar(mapped);
+
+      if (data.status?.toLowerCase() !== "available") {
+        setLoading(false);
+        setAlert({
+          visible: true,
+          type: "error",
+          title: "Car Unavailable",
+          message: "This car is currently unavailable for booking.",
+          actions: [
+            { text: "Browse Cars", onPress: () => router.replace("/search") },
+          ],
+        });
+        return;
+      }
+
+      // Extract unavailable dates from car's embedded bookings
+      const dates: string[] = [];
+      (data.bookings || []).forEach((booking: any) => {
+        const start = new Date(booking.startDate);
+        const end = new Date(booking.endDate);
+
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          dates.push(d.toISOString().split("T")[0]);
+        }
+      });
+
+      setUnavailableDates(dates);
+    } catch {
       setLoading(false);
       setAlert({
         visible: true,
@@ -139,51 +178,7 @@ export default function RentalBookingScreen() {
       return;
     }
 
-    setCar(data);
-
-    // checking car availability status
-    if (data.status?.toLowerCase() !== "available") {
-      setLoading(false);
-      setAlert({
-        visible: true,
-        type: "error",
-        title: "Car Unavailable",
-        message: "This car is currently unavailable for booking.",
-        actions: [
-          { text: "Browse Cars", onPress: () => router.replace("/search") },
-        ],
-      });
-      return;
-    }
-
-    await fetchUnavailableDates();
     setLoading(false);
-  };
-
-  // fetch unavailable dates when car data is loaded
-  const fetchUnavailableDates = async () => {
-    const { data, error } = await supabase
-      .from("bookings")
-      .select("start_date, end_date")
-      .eq("car_id", id)
-      .in("status", ["pending", "approved", "completed"]);
-
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    const dates: string[] = [];
-    data.forEach((booking) => {
-      const start = new Date(booking.start_date);
-      const end = new Date(booking.end_date);
-
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        dates.push(d.toISOString().split("T")[0]); // format YYYY-MM-DD
-      }
-    });
-
-    setUnavailableDates(dates);
   };
 
   // Booking form state
@@ -487,7 +482,7 @@ export default function RentalBookingScreen() {
     createBooking();
   };
 
-  // Create booking and insert into database
+  // Create booking via backend API
   const createBooking = async () => {
     if (isSubmitting) return;
 
@@ -503,10 +498,7 @@ export default function RentalBookingScreen() {
         return;
       }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const user = useAuthStore.getState().user;
       if (!user) {
         setAlert({
           visible: true,
@@ -520,77 +512,24 @@ export default function RentalBookingScreen() {
             },
           ],
         });
+        setIsSubmitting(false);
         return;
       }
 
       const customerId = user.id;
 
-      const { error } = await supabase.from("bookings").insert([
-        {
-          customer_id: customerId,
-          owner_id: car?.owner_id,
-          car_id: id,
-          driver_id: null,
-          start_date: form.pickupDate,
-          end_date: form.returnDate,
-          pickup_time: form.pickupTime,
-          dropoff_time: form.returnTime,
-          total_price: total,
-          pickup_location: form.pickupLocation,
-          dropoff_location: form.dropoffLocation,
-          status: "pending",
-          note: form.note,
-        },
-      ]);
-
-      if (error) {
-        if (error.code === "23P01") {
-          setAlert({
-            visible: true,
-            type: "error",
-            title: "Unavailable",
-            message:
-              "This car is already booked for selected dates. Please choose different dates.",
-            actions: [
-              {
-                text: "OK",
-                onPress: () => {
-                  setForm((prev) => ({
-                    ...prev,
-                    pickupDate: "",
-                    returnDate: "",
-                  }));
-                },
-              },
-            ],
-          });
-          fetchCar();
-          return;
-        }
-
-        if (error.code === "40P01") {
-          setAlert({
-            visible: true,
-            type: "warning",
-            title: "High Traffic",
-            message:
-              "Another user is booking at the same time. Please try again.",
-            actions: [
-              {
-                text: "Retry",
-                onPress: () => {
-                  setIsSubmitting(false);
-                  createBooking();
-                },
-              },
-            ],
-          });
-          return;
-        }
-
-        console.error(error);
-        return;
-      }
+      await apiClient.post("/bookings", {
+        userId: customerId,
+        carId: Number(id),
+        startDate: form.pickupDate,
+        endDate: form.returnDate,
+        pickupTime: form.pickupTime,
+        dropoffTime: form.returnTime,
+        totalPrice: total,
+        pickupLocation: form.pickupLocation,
+        dropoffLocation: form.dropoffLocation,
+        note: form.note,
+      });
 
       queryClient.invalidateQueries({ queryKey: ["owner_bookings"] });
       queryClient.invalidateQueries({ queryKey: ["renter_bookings"] });
@@ -621,12 +560,36 @@ export default function RentalBookingScreen() {
       }, 300);
     } catch (error: any) {
       console.error("Unexpected error:", error);
-      if (error?.message === "Network request failed") {
+      const status = error?.response?.status;
+      const msg = error?.response?.data?.message || error?.message || "";
+
+      if (status === 409 || msg?.includes("already booked")) {
+        setAlert({
+          visible: true,
+          type: "error",
+          title: "Unavailable",
+          message:
+            "This car is already booked for selected dates. Please choose different dates.",
+          actions: [
+            {
+              text: "OK",
+              onPress: () => {
+                setForm((prev) => ({
+                  ...prev,
+                  pickupDate: "",
+                  returnDate: "",
+                }));
+              },
+            },
+          ],
+        });
+        fetchCar();
+      } else if (msg?.includes("Network request failed")) {
         setToastMessage("Network issue");
         setToastVisible(true);
         setToastType("error");
       } else {
-        setToastMessage("Error");
+        setToastMessage("Error creating booking");
         setToastVisible(true);
         setToastType("error");
       }
