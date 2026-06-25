@@ -393,7 +393,7 @@ const OwnerBookingDetails = ({ bookingId }: Props) => {
           })),
         );
 
-        if (!selectedDriverId && bookingData.driverId) {
+        if (!selectedDriverId && bookingData.driverId && bookingData.status !== "PENDING") {
           setSelectedDriverId(String(bookingData.driverId));
         }
       } catch {}

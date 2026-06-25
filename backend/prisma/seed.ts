@@ -88,7 +88,7 @@ async function main() {
     });
   }
 
-  const [car1, car2, car3] = createdCars;
+  const [car1, car2, car3, car4, car5] = createdCars;
 
   // ── Drivers ──
   const driverData = [
@@ -102,6 +102,8 @@ async function main() {
     { ownerId: owner4.id, name: 'Owner Four - Driver3', phone: '09-000-000-000', gender: 'Male', status: 'available', license_number: 'LIC006', nrc: 'NRC006', postal_code: '11191', location: 'Yangon, Dagon' },
     { ownerId: owner5.id, name: 'Owner Five - Driver1', phone: '09-111-111-111', gender: 'Female', status: 'available', license_number: 'LIC007', nrc: 'NRC007', postal_code: '11201', location: 'Yangon, Bahan' },
     { ownerId: owner5.id, name: 'Owner Five - Driver2', phone: '09-111-111-111', gender: 'Female', status: 'available', license_number: 'LIC008', nrc: 'NRC008', postal_code: '11201', location: 'Yangon, Bahan' },
+    { ownerId: owner2.id, name: 'Hlaing Hlaing Tun', phone: '09778889999', gender: 'Female', status: 'available', license_number: 'LIC011', nrc: 'NRC011', postal_code: '11111', location: 'Yangon, Sanchaung' },
+    { ownerId: owner2.id, name: 'Kyaw Kyaw Naing', phone: '09667778888', gender: 'Male', status: 'available', license_number: 'LIC012', nrc: 'NRC012', postal_code: '11211', location: 'Yangon, Tamwe' },
   ];
   const createdDrivers = [];
   for (const d of driverData) {
@@ -109,22 +111,28 @@ async function main() {
     createdDrivers.push(driver);
   }
   const [driver1, driver2] = createdDrivers;
+  const driver3 = createdDrivers[10];
+  const driver4 = createdDrivers[11];
 
   // ── Bookings ──
   const now = new Date();
   const day = (offset: number) => { const d = new Date(now); d.setDate(d.getDate() + offset); return d; };
 
   const bookingData = [
-    { userId: renter1.id, carId: car1.id, driverId: driver1.id, startDate: day(2), endDate: day(4), totalPrice: 120000, pickupLocation: 'Yangon Downtown', dropoffLocation: 'Insein', pickupTime: '09:00', dropoffTime: '18:00', status: BookingStatus.PENDING },
-    { userId: renter1.id, carId: car2.id, driverId: driver2.id, startDate: day(3), endDate: day(5), totalPrice: 150000, pickupLocation: 'Bahan', dropoffLocation: 'Mayangone', pickupTime: '08:00', dropoffTime: '17:00', status: BookingStatus.APPROVED },
-    { userId: renter2.id, carId: car3.id, driverId: driver1.id, startDate: day(-8), endDate: day(-6), totalPrice: 90000, pickupLocation: 'Mandalay Center', dropoffLocation: 'Amarapura', pickupTime: '10:00', dropoffTime: '16:00', status: BookingStatus.COMPLETED },
-    { userId: renter2.id, carId: car1.id, driverId: driver2.id, startDate: day(1), endDate: day(2), totalPrice: 110000, pickupLocation: 'Sanchaung', dropoffLocation: 'Hlaing', pickupTime: '09:00', dropoffTime: '18:00', status: BookingStatus.REJECTED },
-    { userId: renter1.id, carId: car2.id, driverId: driver1.id, startDate: day(2), endDate: day(3), totalPrice: 100000, pickupLocation: 'Kamayut', dropoffLocation: 'Bahan', pickupTime: '07:30', dropoffTime: '15:30', status: BookingStatus.PENDING },
-    { userId: renter2.id, carId: car3.id, driverId: driver2.id, startDate: day(4), endDate: day(6), totalPrice: 180000, pickupLocation: 'North Dagon', dropoffLocation: 'South Dagon', pickupTime: '09:00', dropoffTime: '19:00', status: BookingStatus.APPROVED },
-    { userId: renter1.id, carId: car1.id, driverId: driver1.id, startDate: day(-13), endDate: day(-12), totalPrice: 80000, pickupLocation: 'Yangon Airport', dropoffLocation: 'Downtown', pickupTime: '11:00', dropoffTime: '14:00', status: BookingStatus.COMPLETED },
-    { userId: renter1.id, carId: car2.id, driverId: driver1.id, startDate: day(0), endDate: day(1), totalPrice: 95000, pickupLocation: 'Insein', dropoffLocation: 'Hlaing Thar Yar', pickupTime: '08:00', dropoffTime: '13:00', status: BookingStatus.REJECTED },
-    { userId: renter2.id, carId: car3.id, driverId: driver2.id, startDate: day(2), endDate: day(5), totalPrice: 200000, pickupLocation: 'Mawlamyine Rd', dropoffLocation: 'Yangon Port', pickupTime: '10:00', dropoffTime: '20:00', status: BookingStatus.PENDING },
-    { userId: renter2.id, carId: car1.id, driverId: driver2.id, startDate: day(5), endDate: day(7), totalPrice: 170000, pickupLocation: 'Botahtaung', dropoffLocation: 'Yankin', pickupTime: '09:00', dropoffTime: '18:00', status: BookingStatus.APPROVED },
+    { userId: renter1.id, ownerId: owner1.id, carId: car1.id, driverId: driver1.id, startDate: day(2), endDate: day(4), totalPrice: 120000, pickupLocation: 'Yangon Downtown', dropoffLocation: 'Insein', pickupTime: '09:00', dropoffTime: '18:00', status: BookingStatus.PENDING },
+    { userId: renter1.id, ownerId: owner1.id, carId: car2.id, driverId: driver2.id, startDate: day(3), endDate: day(5), totalPrice: 150000, pickupLocation: 'Bahan', dropoffLocation: 'Mayangone', pickupTime: '08:00', dropoffTime: '17:00', status: BookingStatus.APPROVED },
+    { userId: renter2.id, ownerId: owner1.id, carId: car3.id, driverId: driver1.id, startDate: day(-8), endDate: day(-6), totalPrice: 90000, pickupLocation: 'Mandalay Center', dropoffLocation: 'Amarapura', pickupTime: '10:00', dropoffTime: '16:00', status: BookingStatus.COMPLETED },
+    { userId: renter2.id, ownerId: owner1.id, carId: car1.id, driverId: driver2.id, startDate: day(1), endDate: day(2), totalPrice: 110000, pickupLocation: 'Sanchaung', dropoffLocation: 'Hlaing', pickupTime: '09:00', dropoffTime: '18:00', status: BookingStatus.REJECTED },
+    { userId: renter1.id, ownerId: owner1.id, carId: car2.id, driverId: driver1.id, startDate: day(2), endDate: day(3), totalPrice: 100000, pickupLocation: 'Kamayut', dropoffLocation: 'Bahan', pickupTime: '07:30', dropoffTime: '15:30', status: BookingStatus.PENDING },
+    { userId: renter2.id, ownerId: owner1.id, carId: car3.id, driverId: driver2.id, startDate: day(4), endDate: day(6), totalPrice: 180000, pickupLocation: 'North Dagon', dropoffLocation: 'South Dagon', pickupTime: '09:00', dropoffTime: '19:00', status: BookingStatus.APPROVED },
+    { userId: renter1.id, ownerId: owner1.id, carId: car1.id, driverId: driver1.id, startDate: day(-13), endDate: day(-12), totalPrice: 80000, pickupLocation: 'Yangon Airport', dropoffLocation: 'Downtown', pickupTime: '11:00', dropoffTime: '14:00', status: BookingStatus.COMPLETED },
+    { userId: renter1.id, ownerId: owner1.id, carId: car2.id, driverId: driver1.id, startDate: day(0), endDate: day(1), totalPrice: 95000, pickupLocation: 'Insein', dropoffLocation: 'Hlaing Thar Yar', pickupTime: '08:00', dropoffTime: '13:00', status: BookingStatus.REJECTED },
+    { userId: renter2.id, ownerId: owner1.id, carId: car3.id, driverId: driver2.id, startDate: day(2), endDate: day(5), totalPrice: 200000, pickupLocation: 'Mawlamyine Rd', dropoffLocation: 'Yangon Port', pickupTime: '10:00', dropoffTime: '20:00', status: BookingStatus.PENDING },
+    { userId: renter2.id, ownerId: owner1.id, carId: car1.id, driverId: driver2.id, startDate: day(5), endDate: day(7), totalPrice: 170000, pickupLocation: 'Botahtaung', dropoffLocation: 'Yankin', pickupTime: '09:00', dropoffTime: '18:00', status: BookingStatus.APPROVED },
+    // Owner2 bookings
+    { userId: renter1.id, ownerId: owner2.id, carId: car4.id, driverId: driver3.id, startDate: day(1), endDate: day(3), totalPrice: 70000, pickupLocation: 'Sanchaung', dropoffLocation: 'Hlaing', pickupTime: '09:00', dropoffTime: '18:00', status: BookingStatus.PENDING },
+    { userId: renter2.id, ownerId: owner2.id, carId: car5.id, driverId: driver4.id, startDate: day(2), endDate: day(4), totalPrice: 240000, pickupLocation: 'Tamwe', dropoffLocation: 'Insein', pickupTime: '08:00', dropoffTime: '17:00', status: BookingStatus.PENDING },
+    { userId: renter1.id, ownerId: owner2.id, carId: car4.id, driverId: driver3.id, startDate: day(5), endDate: day(6), totalPrice: 35000, pickupLocation: 'Yangon Downtown', dropoffLocation: 'Sanchaung', pickupTime: '10:00', dropoffTime: '16:00', status: BookingStatus.APPROVED },
   ];
   for (const b of bookingData) {
     await prisma.booking.create({ data: b });
@@ -151,7 +159,7 @@ async function main() {
   console.log(`  Users: 7`);
   console.log(`  Cars: ${createdCars.length}`);
   console.log(`  Drivers: ${createdDrivers.length}`);
-  console.log(`  Bookings: ${bookingData.length}`);
+  console.log(`  Bookings: ${bookingData.length} (${bookingData.length - 3} for owner1, 3 for owner2)`);
   console.log(`  Reviews: ${reviewData.length}`);
 }
 

@@ -15,7 +15,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input, InputField, InputIcon, InputSlot } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import yangonTownships from "@/constants/yangon-townships.json";
-import { supabase } from "@/lib/supabase";
+import { apiClient } from "@/lib/axios";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToastStore } from "@/store/useToastStore";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -101,7 +101,6 @@ export default function DriverListScreen() {
     postal_code: "",
     avatarUrl: "",
   });
-  const today = new Date().toISOString().split("T")[0];
   const PAGE_SIZE = 10;
 
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -131,39 +130,23 @@ export default function DriverListScreen() {
     queryFn: async () => {
       if (!user?.id) return [];
 
-      const {
-        data: driversData,
-        error,
-        count,
-      } = await supabase
-        .from("drivers")
-        .select("*", { count: "exact" })
-        .eq("owner_id", user.id)
-        .order("updated_at", { ascending: false });
+      const { data: driversData } = await apiClient.get("/drivers");
 
-      if (error) {
-        setAlertData({
-          title: "Error",
-          message: error.message,
-          type: "error",
-          actions: [{ text: "OK" }],
-        });
-        setAlertVisible(true);
-        throw error;
-      }
-
-      const { data: bookings } = await supabase
-        .from("bookings")
-        .select("driver_id, start_date")
-        .eq("status", "approved")
-        .eq("start_date", today);
-
-      const onTripIds = bookings?.map((b) => b.driver_id) || [];
-      setTotalCount(count || 0);
-      return (driversData || []).map((d) => ({
+      const today = new Date().toISOString().split("T")[0];
+      const mapped = (driversData || []).map((d: any) => ({
         ...d,
-        status: onTripIds.includes(d.id) ? "on trip" : d.status,
+        id: String(d.id),
+        status: d.bookings?.some(
+          (b: any) =>
+            b.status === "APPROVED" &&
+            new Date(b.start_date).toISOString().split("T")[0] === today
+        )
+          ? "on trip"
+          : d.status,
       })) as Driver[];
+
+      setTotalCount(mapped.length);
+      return mapped;
     },
     enabled: !!user?.id,
   });
@@ -189,51 +172,29 @@ export default function DriverListScreen() {
   };
 
   const handleDelete = async (id: string) => {
-    const { data: bookings } = await supabase
-      .from("bookings")
-      .select("id")
-      .eq("driver_id", id)
-      .limit(1);
+    try {
+      await apiClient.delete(`/drivers/${id}`);
 
-    if (bookings && bookings.length > 0) {
-      setAlertData({
-        title: "Cannot delete",
-        message: "Driver has booking!",
-        type: "error",
-        actions: [
-          {
-            text: "OK",
-          },
-        ],
-      });
-      setAlertVisible(true);
-      return;
-    }
-
-    const { error } = await supabase.from("drivers").delete().eq("id", id);
-
-    if (error) {
-      setAlertData({
-        title: "Error",
-        message: error.message,
-        type: "error",
-        actions: [{ text: "OK" }],
-      });
-      setAlertVisible(true);
-      return;
-    } else {
       setAlertData({
         title: "Delete Driver",
         message: "Driver Deleted Successfully",
         type: "success",
-        actions: [
-          {
-            text: "OK",
-          },
-        ],
+        actions: [{ text: "OK" }],
       });
       setAlertVisible(true);
       queryClient.invalidateQueries({ queryKey: ["drivers", user?.id] });
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to delete driver";
+      setAlertData({
+        title: "Error",
+        message,
+        type: "error",
+        actions: [{ text: "OK" }],
+      });
+      setAlertVisible(true);
     }
   };
 

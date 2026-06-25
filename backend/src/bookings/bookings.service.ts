@@ -225,6 +225,10 @@ export class BookingsService {
                     updatedBooking.user.profile.expo_push_token,
                     title,
                     body,
+                    {
+                        url: `carrentalv2://booking/${updatedBooking.id}`,
+                        notification_id: String(notification.id),
+                    },
                 );
             }
         }
@@ -259,6 +263,10 @@ export class BookingsService {
                     updatedBooking.car.owner.profile.expo_push_token,
                     ownerTitle,
                     ownerBody,
+                    {
+                        url: `carrentalv2://booking/${updatedBooking.id}`,
+                        notification_id: String(ownerNoti.id),
+                    },
                 );
             }
         }
