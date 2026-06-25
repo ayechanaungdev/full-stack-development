@@ -181,7 +181,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const inCurrent = state.activePartnerId === message.sender_id || state.activePartnerId === message.receiver_id;
       let newConvs = [...state.conversations];
-      const pId = message.sender_id;
+      const currentUserId = String(useAuthStore.getState().user?.id ?? '');
+      const isOwnMessage = currentUserId === message.sender_id;
+      const pId = isOwnMessage ? message.receiver_id : message.sender_id;
       const convIndex = newConvs.findIndex(c => c.partner_id === pId);
       const isViewingPartner = state.activePartnerId === pId;
 
@@ -204,14 +206,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     const state = get();
     const currentUserId = useAuthStore.getState().user?.id;
-    const isViewingPartner = state.activePartnerId === message.sender_id;
+    const isOwnMessage = currentUserId && String(currentUserId) === message.sender_id;
+    const partnerId = isOwnMessage ? message.receiver_id : message.sender_id;
+    const isViewingPartner = state.activePartnerId === partnerId;
 
-    if (!isViewingPartner && currentUserId && String(currentUserId) === message.receiver_id) {
+    if (!isViewingPartner && currentUserId && !isOwnMessage) {
       adjustBadgeCount(String(currentUserId), 'messages', 1);
     }
 
-    if (state.activePartnerId === message.sender_id) {
-      get().markAsRead(message.sender_id);
+    if (state.activePartnerId === partnerId) {
+      get().markAsRead(partnerId);
     }
   },
 
