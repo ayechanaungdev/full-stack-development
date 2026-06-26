@@ -13,5 +13,9 @@ services:
         sync: false
       - key: JWT_REFRESH_SECRET
         sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
       - key: PORT
         value: 3000

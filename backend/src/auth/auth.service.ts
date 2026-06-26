@@ -42,13 +42,12 @@ export class AuthService {
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: 'MY_SUPER_SECRET_KEY_123',
-        // expiresIn: '20s', // 👈 Very First Expired Token For Testing
-        expiresIn: '15m', // 👈 Real Setting
+        secret: process.env.JWT_SECRET || 'MY_SUPER_SECRET_KEY_123',
+        expiresIn: '15m',
       }),
       this.jwtService.signAsync(payload, {
-        secret: 'MY_SUPER_REFRESH_KEY_123', // 👈 Different secret!
-        expiresIn: '7d', // 👈 Long expiration
+        secret: process.env.JWT_REFRESH_SECRET || 'MY_SUPER_REFRESH_KEY_123',
+        expiresIn: '7d',
       }),
     ]);
     return { accessToken, refreshToken };

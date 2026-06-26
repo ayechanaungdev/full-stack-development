@@ -8,28 +8,50 @@ export class FirebaseService {
 
   constructor() {
     try {
-      const serviceAccountPath = path.resolve(
-        process.cwd(),
-        'serviceAccountKey.json',
-      );
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
-      const serviceAccount = require(serviceAccountPath);
-
-      if (!admin.apps.length) {
-        const storageBucket = `${(serviceAccount as { project_id: string }).project_id}.appspot.com`;
-        admin.initializeApp({
-          credential: admin.credential.cert(
-            serviceAccount as admin.ServiceAccount,
-          ),
-          storageBucket,
-        });
-        this.logger.log(
-          `Firebase Admin SDK initialized successfully. 🚀 Bucket: ${storageBucket}`,
-        );
-      }
+      this.initializeFirebase();
     } catch (error) {
       this.logger.error('Failed to initialize Firebase Admin SDK ❌', error);
     }
+  }
+
+  private initializeFirebase() {
+    if (admin.apps.length) return;
+
+    const envServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
+
+    if (envServiceAccount) {
+      const decoded = Buffer.from(envServiceAccount, 'base64').toString(
+        'utf-8',
+      );
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const serviceAccount = JSON.parse(decoded);
+      const storageBucket = `${(serviceAccount as { project_id: string }).project_id}.appspot.com`;
+      admin.initializeApp({
+        credential: admin.credential.cert(
+          serviceAccount as admin.ServiceAccount,
+        ),
+        storageBucket,
+      });
+      this.logger.log(
+        `Firebase Admin SDK initialized from env var. Bucket: ${storageBucket}`,
+      );
+      return;
+    }
+
+    const serviceAccountPath = path.resolve(
+      process.cwd(),
+      'serviceAccountKey.json',
+    );
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+    const serviceAccount = require(serviceAccountPath);
+    const storageBucket = `${(serviceAccount as { project_id: string }).project_id}.appspot.com`;
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+      storageBucket,
+    });
+    this.logger.log(
+      `Firebase Admin SDK initialized from file. Bucket: ${storageBucket}`,
+    );
   }
 
   async sendPushNotification(
