@@ -35,11 +35,13 @@ async function bootstrap() {
   // ---------------------------------
 
   // Activate global ValidationPipe
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    transform: true,
-    transformOptions: { enableImplicitConversion: true },
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
 
   // Tell the server to listen on port 3000
   const port = process.env.PORT || 3000;
@@ -48,4 +50,4 @@ async function bootstrap() {
   console.log(`Swagger UI: http://localhost:${port}/api`);
 }
 
-bootstrap();
+void bootstrap();

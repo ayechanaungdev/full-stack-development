@@ -17,22 +17,34 @@ export class QueryCarDto {
   @Min(1)
   limit?: number = 10;
 
-  @ApiPropertyOptional({ example: 'Available', description: 'Filter by status' })
+  @ApiPropertyOptional({
+    example: 'Available',
+    description: 'Filter by status',
+  })
   @IsOptional()
   @IsString()
   status?: string;
 
-  @ApiPropertyOptional({ example: 'Toyota', description: 'Search keyword (brand, model, car_number)' })
+  @ApiPropertyOptional({
+    example: 'Toyota',
+    description: 'Search keyword (brand, model, car_number)',
+  })
   @IsOptional()
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ example: 'Toyota', description: 'Filter by exact brand' })
+  @ApiPropertyOptional({
+    example: 'Toyota',
+    description: 'Filter by exact brand',
+  })
   @IsOptional()
   @IsString()
   brand?: string;
 
-  @ApiPropertyOptional({ example: '11012', description: 'Filter by postal code' })
+  @ApiPropertyOptional({
+    example: '11012',
+    description: 'Filter by postal code',
+  })
   @IsOptional()
   @IsString()
   postal_code?: string;
@@ -68,12 +80,18 @@ export class QueryCarDto {
   @IsNumber()
   ownerId?: number;
 
-  @ApiPropertyOptional({ example: '2024-06-01', description: 'Start date for availability filter' })
+  @ApiPropertyOptional({
+    example: '2024-06-01',
+    description: 'Start date for availability filter',
+  })
   @IsOptional()
   @IsString()
   startDate?: string;
 
-  @ApiPropertyOptional({ example: '2024-06-10', description: 'End date for availability filter' })
+  @ApiPropertyOptional({
+    example: '2024-06-10',
+    description: 'End date for availability filter',
+  })
   @IsOptional()
   @IsString()
   endDate?: string;

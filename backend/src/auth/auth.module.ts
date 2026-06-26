@@ -7,7 +7,8 @@ import { JwtStrategy } from './jwt.strategy';
 import { JwtRefreshStrategy } from './jwt-refresh.strategy';
 
 @Module({
-  imports: [UsersModule,
+  imports: [
+    UsersModule,
     JwtModule.register({
       global: true, // 👈 Makes the token generator available everywhere
       secret: 'MY_SUPER_SECRET_KEY_123', // ⚠️ In production, this goes in a .env file!
@@ -17,4 +18,4 @@ import { JwtRefreshStrategy } from './jwt-refresh.strategy';
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtRefreshStrategy],
 })
-export class AuthModule { }
+export class AuthModule {}

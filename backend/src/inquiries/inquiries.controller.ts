@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { InquiriesService } from './inquiries.service';
 import { CreateInquiryDto } from './dto/create-inquiry.dto';
 import { JwtAuthGuard } from '../auth/jwt.guard';
+import { AuthenticatedRequest } from '../common/types';
 
 @ApiTags('Inquiries')
 @Controller('inquiries')
@@ -12,10 +13,13 @@ export class InquiriesController {
   constructor(private readonly inquiriesService: InquiriesService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create inquiry', description: 'Submit a customer inquiry' })
+  @ApiOperation({
+    summary: 'Create inquiry',
+    description: 'Submit a customer inquiry',
+  })
   async create(
     @Body() createInquiryDto: CreateInquiryDto,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     const currentUserId = req.user.userId;
     return this.inquiriesService.create({

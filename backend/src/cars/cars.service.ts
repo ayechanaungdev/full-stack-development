@@ -6,7 +6,7 @@ import { QueryCarDto } from './dto/query-car.dto';
 
 @Injectable()
 export class CarsService {
-  constructor(private carsRepository: CarsRepository) { }
+  constructor(private carsRepository: CarsRepository) {}
 
   async create(createCarDto: CreateCarDto) {
     return this.carsRepository.create(createCarDto);
@@ -29,6 +29,7 @@ export class CarsService {
   }
 
   async remove(id: number) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return this.carsRepository.remove(id);
   }
 

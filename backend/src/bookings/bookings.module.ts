@@ -8,6 +8,6 @@ import { ChatModule } from 'src/chat/chat.module';
   imports: [ChatModule],
   controllers: [BookingsController],
   providers: [BookingsService, BookingsRepository],
-  exports: [BookingsService]
+  exports: [BookingsService],
 })
 export class BookingsModule {}

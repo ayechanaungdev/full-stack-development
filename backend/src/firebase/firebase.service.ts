@@ -12,15 +12,20 @@ export class FirebaseService {
         process.cwd(),
         'serviceAccountKey.json',
       );
+      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
       const serviceAccount = require(serviceAccountPath);
 
       if (!admin.apps.length) {
-        const storageBucket = `${serviceAccount.project_id}.appspot.com`;
+        const storageBucket = `${(serviceAccount as { project_id: string }).project_id}.appspot.com`;
         admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount),
+          credential: admin.credential.cert(
+            serviceAccount as admin.ServiceAccount,
+          ),
           storageBucket,
         });
-        this.logger.log(`Firebase Admin SDK initialized successfully. 🚀 Bucket: ${storageBucket}`);
+        this.logger.log(
+          `Firebase Admin SDK initialized successfully. 🚀 Bucket: ${storageBucket}`,
+        );
       }
     } catch (error) {
       this.logger.error('Failed to initialize Firebase Admin SDK ❌', error);
@@ -31,8 +36,8 @@ export class FirebaseService {
     token: string,
     title: string,
     body: string,
-    data?: any,
-  ) {
+    data?: Record<string, string>,
+  ): Promise<any> {
     try {
       if (token.startsWith('ExponentPushToken')) {
         return await this.sendExpoPush(token, title, body, data);
@@ -54,7 +59,7 @@ export class FirebaseService {
     token: string,
     title: string,
     body: string,
-    data?: any,
+    data?: Record<string, string>,
   ) {
     const message = {
       to: token,
@@ -69,8 +74,10 @@ export class FirebaseService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(message),
     });
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const result = await response.json();
     this.logger.log(`Expo push result: ${JSON.stringify(result)}`);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return result;
   }
 
@@ -97,16 +104,18 @@ export class FirebaseService {
       // Try to make public, but don't fail if bucket uses uniform access
       try {
         await file.makePublic();
-      } catch (publicErr: any) {
-        this.logger.warn(`makePublic failed (bucket may use uniform access): ${publicErr?.message}`);
+      } catch (publicErr: unknown) {
+        this.logger.warn(
+          `makePublic failed (bucket may use uniform access): ${(publicErr as Error)?.message}`,
+        );
       }
 
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
       this.logger.log(`Uploaded file to ${publicUrl}`);
       return { publicUrl };
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.logger.error('Error uploading file to Firebase Storage', error);
-      throw new Error(`Firebase upload failed: ${error?.message}`);
+      throw new Error(`Firebase upload failed: ${(error as Error)?.message}`);
     }
   }
 
@@ -128,7 +137,7 @@ export class FirebaseService {
         action: 'write',
         expires: Date.now() + expiresInSeconds * 1000,
         contentType: contentType || 'application/octet-stream',
-      } as any);
+      });
 
       // Also compute the public URL where file will be accessible after making public
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;

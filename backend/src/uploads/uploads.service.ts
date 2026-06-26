@@ -23,7 +23,7 @@ export class UploadsService {
     });
   }
 
-  async getSignedUrl(
+  getSignedUrl(
     filename: string,
     expiresInSeconds?: number,
     contentType?: string,

@@ -16,10 +16,7 @@ export class NotificationsService {
       this.prisma.booking.count({
         where: {
           isRead: false,
-          OR: [
-            { userId },
-            { ownerId: userId },
-          ],
+          OR: [{ userId }, { ownerId: userId }],
         },
       }),
       this.prisma.dailyReport.count({
@@ -44,8 +41,12 @@ export class NotificationsService {
     });
   }
 
-  async markNotificationsBySenderAsRead(userId: number, senderId: number, type?: string) {
-    const where: any = {
+  async markNotificationsBySenderAsRead(
+    userId: number,
+    senderId: number,
+    type?: string,
+  ): Promise<any> {
+    const where: Record<string, unknown> = {
       userId,
       senderId,
       isRead: false,

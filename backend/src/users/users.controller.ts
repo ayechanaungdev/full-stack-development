@@ -16,6 +16,7 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
+import { AuthenticatedRequest } from '../common/types';
 
 @ApiTags('Users')
 @Controller('users')
@@ -23,7 +24,10 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create user', description: 'Register a new user account' })
+  @ApiOperation({
+    summary: 'Create user',
+    description: 'Register a new user account',
+  })
   create(@Body() createUserDto: CreateUserDto) {
     return this.usersService.create(createUserDto);
   }
@@ -31,7 +35,10 @@ export class UsersController {
   @Get()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'List all users', description: 'Get all users (admin only)' })
+  @ApiOperation({
+    summary: 'List all users',
+    description: 'Get all users (admin only)',
+  })
   findAll() {
     return this.usersService.findAll();
   }
@@ -39,18 +46,27 @@ export class UsersController {
   @Get('check-phone/:phone')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Check phone availability', description: 'Check if a phone number is already registered' })
+  @ApiOperation({
+    summary: 'Check phone availability',
+    description: 'Check if a phone number is already registered',
+  })
   checkPhone(
     @Param('phone') phone: string,
     @Query('excludeId') excludeId?: string,
   ) {
-    return this.usersService.checkPhone(phone, excludeId ? parseInt(excludeId, 10) : undefined);
+    return this.usersService.checkPhone(
+      phone,
+      excludeId ? parseInt(excludeId, 10) : undefined,
+    );
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Get user by ID', description: 'Get user profile details' })
+  @ApiOperation({
+    summary: 'Get user by ID',
+    description: 'Get user profile details',
+  })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.findOne(id);
   }
@@ -58,7 +74,10 @@ export class UsersController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Update user', description: 'Update user profile information' })
+  @ApiOperation({
+    summary: 'Update user',
+    description: 'Update user profile information',
+  })
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateUserDto: UpdateUserDto,
@@ -69,11 +88,14 @@ export class UsersController {
   @Patch(':id/push-token')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Update push token', description: 'Update Expo push notification token' })
+  @ApiOperation({
+    summary: 'Update push token',
+    description: 'Update Expo push notification token',
+  })
   updatePushToken(
     @Param('id', ParseIntPipe) id: number,
     @Body('expo_push_token') expoPushToken: string | null,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     // Only allow users to update their own push token
     if (req.user.userId !== id) {
@@ -85,7 +107,10 @@ export class UsersController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Delete user', description: 'Delete a user account (admin only)' })
+  @ApiOperation({
+    summary: 'Delete user',
+    description: 'Delete a user account (admin only)',
+  })
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.remove(id);
   }

@@ -7,7 +7,12 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { GoogleLoginDto } from './dto/google-login.dto';
@@ -17,6 +22,7 @@ import { CreateUserDto } from 'src/users/dto/create-user.dto';
 import { UsersService } from 'src/users/users.service';
 import { JwtAuthGuard } from './jwt.guard';
 import { JwtRefreshAuthGuard } from './jwt-refresh.guard';
+import { AuthenticatedRequest } from 'src/common/types';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -28,8 +34,14 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'User login', description: 'Authenticate with email and password' })
-  @ApiResponse({ status: 200, description: 'Login successful, returns JWT tokens' })
+  @ApiOperation({
+    summary: 'User login',
+    description: 'Authenticate with email and password',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful, returns JWT tokens',
+  })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
@@ -37,32 +49,54 @@ export class AuthController {
 
   @Post('google')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Google login', description: 'Authenticate with Google OAuth token' })
-  @ApiResponse({ status: 200, description: 'Login successful, returns JWT tokens' })
+  @ApiOperation({
+    summary: 'Google login',
+    description: 'Authenticate with Google OAuth token',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful, returns JWT tokens',
+  })
   googleLogin(@Body() googleLoginDto: GoogleLoginDto) {
     return this.authService.googleLogin(googleLoginDto);
   }
 
   @Post('signup')
-  @ApiOperation({ summary: 'User registration', description: 'Create a new user account' })
+  @ApiOperation({
+    summary: 'User registration',
+    description: 'Create a new user account',
+  })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async signup(@Body() createUserDto: CreateUserDto) {
     const user = await this.usersService.create(createUserDto);
-    await this.authService.sendVerificationCode(createUserDto.email, 'signup').catch(() => null);
+    await this.authService
+      .sendVerificationCode(createUserDto.email, 'signup')
+      .catch(() => null);
     return user;
   }
 
   @Post('send-verification')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Send verification code', description: 'Send OTP to email for verification' })
-  sendVerification(@Body() body: { email: string; type?: 'signup' | 'password_reset' }) {
-    return this.authService.sendVerificationCode(body.email, body.type || 'signup');
+  @ApiOperation({
+    summary: 'Send verification code',
+    description: 'Send OTP to email for verification',
+  })
+  sendVerification(
+    @Body() body: { email: string; type?: 'signup' | 'password_reset' },
+  ) {
+    return this.authService.sendVerificationCode(
+      body.email,
+      body.type || 'signup',
+    );
   }
 
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify OTP', description: 'Verify email with OTP code' })
+  @ApiOperation({
+    summary: 'Verify OTP',
+    description: 'Verify email with OTP code',
+  })
   @ApiResponse({ status: 200, description: 'OTP verified successfully' })
   @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
   verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
@@ -71,7 +105,10 @@ export class AuthController {
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reset password', description: 'Reset password using verified OTP' })
+  @ApiOperation({
+    summary: 'Reset password',
+    description: 'Reset password using verified OTP',
+  })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
   resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     return this.authService.resetPassword(resetPasswordDto);
@@ -80,9 +117,12 @@ export class AuthController {
   @UseGuards(JwtRefreshAuthGuard)
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refresh tokens', description: 'Get new access/refresh token pair using refresh token' })
+  @ApiOperation({
+    summary: 'Refresh tokens',
+    description: 'Get new access/refresh token pair using refresh token',
+  })
   @ApiBearerAuth('access-token')
-  refreshTokens(@Request() req: any) {
+  refreshTokens(@Request() req: AuthenticatedRequest) {
     const userId = req.user.userId;
     const refreshToken = req.headers.authorization.replace('Bearer ', '');
     return this.authService.refreshTokens(userId, refreshToken);
@@ -91,9 +131,12 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Logout', description: 'Invalidate refresh token and logout' })
+  @ApiOperation({
+    summary: 'Logout',
+    description: 'Invalidate refresh token and logout',
+  })
   @ApiBearerAuth('access-token')
-  logout(@Request() req: any) {
+  logout(@Request() req: AuthenticatedRequest) {
     return this.authService.logout(req.user.userId);
   }
 }
