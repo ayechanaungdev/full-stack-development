@@ -11,7 +11,7 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { WishlistService } from './wishlist.service';
 import { JwtAuthGuard } from '../auth/jwt.guard';
-import { AuthenticatedRequest } from '../common/types';
+import type { AuthenticatedRequest } from '../common/types';
 import { QueryWishlistDto } from './dto/query-wishlist.dto';
 
 @ApiTags('Wishlist')

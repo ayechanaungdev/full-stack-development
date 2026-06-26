@@ -12,7 +12,7 @@ import {
 import { JwtAuthGuard } from 'src/auth/jwt.guard';
 import { ChatService } from './chat.service';
 import { ChatGateway } from './chat.gateway';
-import { AuthenticatedRequest } from '../common/types';
+import type { AuthenticatedRequest } from '../common/types';
 
 @UseGuards(JwtAuthGuard)
 @Controller('chat')

@@ -115,7 +115,7 @@ export class CarsRepository extends BaseRepository {
             await tx.carImage.create({
               data: {
                 carId: id,
-                image_url: img.image_url,
+                image_url: img.image_url ?? '',
                 is_primary: img.is_primary ?? false,
               },
             });

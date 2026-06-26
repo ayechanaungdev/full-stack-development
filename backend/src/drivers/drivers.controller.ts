@@ -15,7 +15,7 @@ import { JwtAuthGuard } from '../auth/jwt.guard';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { DriversService } from './drivers.service';
-import { AuthenticatedRequest } from '../common/types';
+import type { AuthenticatedRequest } from '../common/types';
 
 @ApiTags('Drivers')
 @Controller('drivers')

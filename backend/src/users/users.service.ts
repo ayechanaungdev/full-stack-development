@@ -7,6 +7,7 @@ import { UsersRepository } from './users.repository';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 export interface CheckPhoneResult {
@@ -89,19 +90,24 @@ export class UsersService {
         if (createUserDto.role !== undefined)
           userData.role = createUserDto.role;
 
-        const newUser = await tx.user.create({ data: userData });
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const newUser = await tx.user.create({ data: userData as any });
 
         const profileData: Record<string, unknown> = {};
         for (const field of this.profileFields) {
-          if ((createUserDto as Record<string, unknown>)[field] !== undefined) {
-            profileData[field] = (createUserDto as Record<string, unknown>)[
-              field
-            ];
+          if (
+            (createUserDto as unknown as Record<string, unknown>)[field] !==
+            undefined
+          ) {
+            profileData[field] = (
+              createUserDto as unknown as Record<string, unknown>
+            )[field];
           }
         }
         if (Object.keys(profileData).length > 0) {
           profileData.id = newUser.id;
-          await tx.profile.create({ data: profileData });
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          await tx.profile.create({ data: profileData as any });
         }
 
         return tx.user.findUnique({
@@ -268,7 +274,7 @@ export class UsersService {
 
   async findByRole(role: string): Promise<any> {
     const users = await this.prisma.user.findMany({
-      where: { role },
+      where: { role: role as Role },
       include: { profile: true },
     });
     return users
