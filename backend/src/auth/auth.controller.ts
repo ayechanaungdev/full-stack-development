@@ -6,6 +6,7 @@ import {
   Post,
   UseGuards,
   Request,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,7 +23,7 @@ import { CreateUserDto } from 'src/users/dto/create-user.dto';
 import { UsersService } from 'src/users/users.service';
 import { JwtAuthGuard } from './jwt.guard';
 import { JwtRefreshAuthGuard } from './jwt-refresh.guard';
-import { AuthenticatedRequest } from 'src/common/types';
+import type { AuthenticatedRequest } from 'src/common/types';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -124,7 +125,11 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   refreshTokens(@Request() req: AuthenticatedRequest) {
     const userId = req.user.userId;
-    const refreshToken = req.headers.authorization.replace('Bearer ', '');
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      throw new UnauthorizedException('Refresh token not provided');
+    }
+    const refreshToken = authHeader.replace('Bearer ', '');
     return this.authService.refreshTokens(userId, refreshToken);
   }
 

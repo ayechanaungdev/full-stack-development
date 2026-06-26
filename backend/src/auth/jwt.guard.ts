@@ -10,14 +10,14 @@ import { AuthGuard } from '@nestjs/passport';
 export class JwtAuthGuard extends AuthGuard('jwt') {
   private readonly logger = new Logger(JwtAuthGuard.name);
 
-  handleRequest(
+  handleRequest<TUser = any>(
     err: Error | null,
-    user: Record<string, unknown> | false,
+    user: TUser | false,
     info: { message?: string } | null,
     context: ExecutionContext,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _status?: unknown,
-  ) {
+  ): TUser {
     const req = context
       .switchToHttp()
       .getRequest<{ headers?: { authorization?: string } }>();

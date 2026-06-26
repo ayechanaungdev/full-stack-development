@@ -44,10 +44,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      const token: string =
+      const token =
         typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
           ? authHeader.replace('Bearer ', '')
-          : authHeader;
+          : Array.isArray(authHeader)
+            ? authHeader[0]
+            : authHeader;
 
       const payload: { sub: number; email: string; role: string } =
         await this.jwtService.verifyAsync(token, {

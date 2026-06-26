@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { BaseRepository } from '../common/base.repository';
+import { Role } from '@prisma/client';
 
 /**
  * Users Repository
@@ -56,7 +57,7 @@ export class UsersRepository extends BaseRepository {
 
   async findByRole(role: string) {
     return this.prisma.user.findMany({
-      where: { role },
+      where: { role: role as Role },
     });
   }
 

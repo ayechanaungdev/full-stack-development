@@ -98,9 +98,13 @@ export class AuthService {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, refreshToken, profile, ...userData } = fullUser;
-    const profileSafe = profile || {};
+    const profileSafe = (profile || {}) as Record<string, unknown>;
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { id, createdAt, updatedAt, ...profileData } = profileSafe;
+    const { id, createdAt, updatedAt, ...profileData } = profileSafe as {
+      id?: number;
+      createdAt?: Date;
+      updatedAt?: Date;
+    };
     const flattenedUser = { ...userData, ...profileData };
 
     return {
@@ -372,8 +376,12 @@ export class AuthService {
       profile: userProfileData,
       ...userData
     } = user;
-    const profileSafe = userProfileData || {};
-    const { id, createdAt, updatedAt, ...profileData } = profileSafe;
+    const profileSafe = (userProfileData || {}) as Record<string, unknown>;
+    const { id, createdAt, updatedAt, ...profileData } = profileSafe as {
+      id?: number;
+      createdAt?: Date;
+      updatedAt?: Date;
+    };
     /* eslint-enable @typescript-eslint/no-unused-vars */
     const flattenedUser = { ...userData, ...profileData };
 
