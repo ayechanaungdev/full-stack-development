@@ -5,7 +5,12 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ReviewsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(data: { carId: number; userId: number; rating: number; comment?: string }) {
+  async create(data: {
+    carId: number;
+    userId: number;
+    rating: number;
+    comment?: string;
+  }) {
     return this.prisma.review.create({ data });
   }
 }

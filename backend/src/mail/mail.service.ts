@@ -12,7 +12,12 @@ export class MailService {
     const pass = process.env.SMTP_PASSWORD || '';
 
     if (user && pass) {
-      this.transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+      this.transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+      });
     }
   }
 
@@ -26,7 +31,12 @@ export class MailService {
     console.log(`========================================\n`);
 
     if (this.transporter) {
-      await this.transporter.sendMail({ from: process.env.SMTP_FROM || 'noreply@carrental.app', to: email, subject, text });
+      await this.transporter.sendMail({
+        from: process.env.SMTP_FROM || 'noreply@carrental.app',
+        to: email,
+        subject,
+        text,
+      });
     }
   }
 
@@ -39,7 +49,12 @@ export class MailService {
     console.log(`========================================\n`);
 
     if (this.transporter) {
-      await this.transporter.sendMail({ from: process.env.SMTP_FROM || 'noreply@carrental.app', to: email, subject, text });
+      await this.transporter.sendMail({
+        from: process.env.SMTP_FROM || 'noreply@carrental.app',
+        to: email,
+        subject,
+        text,
+      });
     }
   }
 }

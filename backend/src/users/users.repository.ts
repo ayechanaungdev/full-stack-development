@@ -7,19 +7,19 @@ import { BaseRepository } from '../common/base.repository';
  * Handles all database operations for User entity
  */
 @Injectable()
-export class UsersRepository extends BaseRepository<any> {
+export class UsersRepository extends BaseRepository {
   constructor(prisma: PrismaService) {
     super(prisma, 'user');
   }
 
   // Custom methods specific to Users
-  async findByEmail(email: string): Promise<any | null> {
+  async findByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },
     });
   }
 
-  async findByEmailForAuth(email: string): Promise<any | null> {
+  async findByEmailForAuth(email: string) {
     return this.prisma.user.findUnique({
       where: { email },
       select: {
@@ -33,48 +33,48 @@ export class UsersRepository extends BaseRepository<any> {
     });
   }
 
-  async updateRefreshToken(userId: number, hashedRefreshToken: string): Promise<any> {
+  async updateRefreshToken(userId: number, hashedRefreshToken: string) {
     return this.prisma.user.update({
       where: { id: userId },
       data: { refreshToken: hashedRefreshToken },
     });
   }
 
-  async removeRefreshToken(userId: number): Promise<any> {
+  async removeRefreshToken(userId: number) {
     return this.prisma.user.update({
       where: { id: userId },
       data: { refreshToken: null },
     });
   }
 
-  async updateFcmToken(userId: number, fcmToken: string): Promise<any> {
+  async updateFcmToken(userId: number, fcmToken: string) {
     return this.prisma.user.update({
       where: { id: userId },
       data: { fcmToken },
     });
   }
 
-  async findByRole(role: string): Promise<any[]> {
+  async findByRole(role: string) {
     return this.prisma.user.findMany({
-      where: { role: role as any },
+      where: { role },
     });
   }
 
-  async findWithBookings(userId: number): Promise<any | null> {
+  async findWithBookings(userId: number) {
     return this.prisma.user.findUnique({
       where: { id: userId },
       include: { bookings: true },
     });
   }
 
-  async findActiveUsers(): Promise<any[]> {
+  async findActiveUsers() {
     return this.prisma.user.findMany({
       where: { profile: { is_active: true } },
       include: { profile: true },
     });
   }
 
-  async findByPhone(phone: string): Promise<any | null> {
+  async findByPhone(phone: string) {
     return this.prisma.profile.findUnique({
       where: { phone },
     });

@@ -7,41 +7,41 @@ import { BaseRepository } from '../common/base.repository';
  * Handles all database operations for Driver entity
  */
 @Injectable()
-export class DriversRepository extends BaseRepository<any> {
+export class DriversRepository extends BaseRepository {
   constructor(prisma: PrismaService) {
     super(prisma, 'driver');
   }
 
   // Custom methods specific to Drivers
-  async findByOwnerId(ownerId: number): Promise<any[]> {
+  async findByOwnerId(ownerId: number) {
     return this.prisma.driver.findMany({
       where: { ownerId },
       include: { bookings: true },
     });
   }
 
-  async findByStatus(status: string): Promise<any[]> {
+  async findByStatus(status: string) {
     return this.prisma.driver.findMany({
       where: { status },
       include: { bookings: true },
     });
   }
 
-  async findAvailable(): Promise<any[]> {
+  async findAvailable() {
     return this.prisma.driver.findMany({
       where: { status: 'available' },
       include: { bookings: true },
     });
   }
 
-  async findWithBookings(driverId: number): Promise<any | null> {
+  async findWithBookings(driverId: number) {
     return this.prisma.driver.findUnique({
       where: { id: driverId },
       include: { bookings: true, owner: true },
     });
   }
 
-  async findByLicenseNumber(licenseNumber: string): Promise<any | null> {
+  async findByLicenseNumber(licenseNumber: string) {
     return this.prisma.driver.findFirst({
       where: { license_number: licenseNumber },
     });

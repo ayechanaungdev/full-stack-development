@@ -20,29 +20,29 @@ export class BookingsRepository extends BaseRepository<any> {
     },
   };
 
-  // Custom methods specific to Bookings
-  async findByUserId(userId: number): Promise<any[]> {
+  async findByUserId(userId: number) {
     return this.prisma.booking.findMany({
       where: { userId },
       include: { car: { ...this.carInclude }, user: true },
     });
   }
 
-  async findByCarId(carId: number): Promise<any[]> {
+  async findByCarId(carId: number) {
     return this.prisma.booking.findMany({
       where: { carId },
       include: { user: true, car: { ...this.carInclude } },
     });
   }
 
-  async findByStatus(status: string): Promise<any[]> {
+  async findByStatus(status: string) {
     return this.prisma.booking.findMany({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       where: { status: status as any },
       include: { car: { ...this.carInclude }, user: true },
     });
   }
 
-  async findOverlappingBooking(carId: number, startDate: Date, endDate: Date): Promise<any | null> {
+  async findOverlappingBooking(carId: number, startDate: Date, endDate: Date) {
     return this.prisma.booking.findFirst({
       where: {
         carId,
@@ -55,8 +55,9 @@ export class BookingsRepository extends BaseRepository<any> {
     });
   }
 
-  async createWithRelations(data: any): Promise<any> {
+  async createWithRelations(data: any) {
     return this.prisma.booking.create({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data,
       include: {
         car: { include: { owner: { include: { profile: true } } } },
@@ -65,8 +66,8 @@ export class BookingsRepository extends BaseRepository<any> {
     });
   }
 
-  async updateStatus(id: number, status: string, driverId?: number): Promise<any> {
-    const data: any = { status: status as any };
+  async updateStatus(id: number, status: string, driverId?: number) {
+    const data: Record<string, unknown> = { status: status };
     if (driverId !== undefined) {
       data.driver = { connect: { id: driverId } };
     }
@@ -80,7 +81,7 @@ export class BookingsRepository extends BaseRepository<any> {
     });
   }
 
-  async findWithDetails(id: number): Promise<any | null> {
+  async findWithDetails(id: number) {
     return this.prisma.booking.findUnique({
       where: { id },
       include: {
@@ -99,8 +100,9 @@ export class BookingsRepository extends BaseRepository<any> {
     });
   }
 
-  async findAllPaginated(where: any, skip: number, take: number): Promise<any[]> {
+  async findAllPaginated(where: any, skip: number, take: number) {
     return this.prisma.booking.findMany({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       where,
       skip,
       take,
@@ -122,29 +124,27 @@ export class BookingsRepository extends BaseRepository<any> {
   }
 
   async count(where: any): Promise<number> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     return this.prisma.booking.count({ where });
   }
 
-  async findByDateRange(startDate: Date, endDate: Date): Promise<any[]> {
+  async findByDateRange(startDate: Date, endDate: Date) {
     return this.prisma.booking.findMany({
       where: {
-        AND: [
-          { startDate: { lte: endDate } },
-          { endDate: { gte: startDate } },
-        ],
+        AND: [{ startDate: { lte: endDate } }, { endDate: { gte: startDate } }],
       },
       include: { car: { ...this.carInclude }, user: true },
     });
   }
 
-  async findPendingBookings(): Promise<any[]> {
+  async findPendingBookings() {
     return this.prisma.booking.findMany({
       where: { status: 'PENDING' },
       include: { car: { ...this.carInclude }, user: true },
     });
   }
 
-  async findActiveBookings(): Promise<any[]> {
+  async findActiveBookings() {
     return this.prisma.booking.findMany({
       where: {
         status: { in: ['APPROVED', 'COMPLETED'] },

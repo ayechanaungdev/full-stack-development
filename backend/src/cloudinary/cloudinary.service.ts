@@ -39,7 +39,10 @@ export class CloudinaryService implements OnModuleInit {
             reject(new Error(`Cloudinary upload failed: ${error.message}`));
           } else {
             this.logger.log(`Uploaded file to ${result.secure_url}`);
-            resolve({ publicUrl: result.secure_url, publicId: result.public_id });
+            resolve({
+              publicUrl: result.secure_url,
+              publicId: result.public_id,
+            });
           }
         },
       );

@@ -4,6 +4,6 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule], // 👈 Database သုံးလို့ရအောင် Import ထဲ ထည့်ပါမည်
-  providers: [CronService]
+  providers: [CronService],
 })
-export class CronModule { }
+export class CronModule {}
