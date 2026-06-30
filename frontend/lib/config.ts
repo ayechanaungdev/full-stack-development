@@ -6,7 +6,7 @@ const getBaseUrl = (): string => {
     return 'http://10.0.2.2:3000';
   }
 
-  return 'https://car-rental-api.onrender.com';
+  return 'https://car-rental-api-production-33c5.up.railway.app';
 };
 
 const config = {

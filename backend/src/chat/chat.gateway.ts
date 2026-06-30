@@ -53,7 +53,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const payload: { sub: number; email: string; role: string } =
         await this.jwtService.verifyAsync(token, {
-          secret: 'MY_SUPER_SECRET_KEY_123',
+          secret: process.env.JWT_SECRET || 'MY_SUPER_SECRET_KEY_123',
         });
 
       const socketData = client.data as {
