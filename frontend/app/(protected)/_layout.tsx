@@ -1,24 +1,12 @@
 import { BackButton } from "@/components/BackButton";
-import registerForPushNotificationsAsync from '@/hooks/get-push-noti-token';
 import { useAuthStore } from '@/store/useAuthStore';
 
 import { Redirect, Stack } from 'expo-router';
-import React, { useEffect } from 'react';
+import React from 'react';
 
 export default function ProtectedLayout() {
-  // OLD: destructured only session; used session.user.id for push notifications
-  // const { session, isLoading } = useAuthStore();
-  // useEffect(() => { if (session?.user?.id) { registerForPushNotificationsAsync(session.user.id); } }, [session]);
-  // NEW: also destructure user (backend auth stores user separately)
-  const { session, user, isLoading } = useAuthStore();
-
-  //for push notification token registration
-useEffect(() => {
-  if (user?.id) {
-    registerForPushNotificationsAsync(user.id);
-  }
-}, [user]);
-//******************************************************* */
+  // Push notification registration is handled in root _layout.tsx — removed duplicate here
+  const { session, isLoading } = useAuthStore();
 
   if (isLoading) {
     return null; // Or a loading spinner

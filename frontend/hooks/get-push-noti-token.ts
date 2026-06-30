@@ -50,7 +50,7 @@ async function registerForPushNotificationsAsync(userId: number | string) {
     });
 
   } catch (error) {
-    error instanceof Error;
+    console.error('[Push Notifications] Failed to register push token:', error);
   }
 }
 
